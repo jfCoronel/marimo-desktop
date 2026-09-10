@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+*.egg-info/
+dist/
+build/
+
+# uv
+# (uv.lock IS committed)
+
+# Briefcase
+/macOS/
+/windows/
+/linux/
+/iOS/
+/android/
+/web/
+
+# marimo
+__marimo__/
+.marimo.toml
+
+# OS / editors
+.DS_Store
+.idea/
+.vscode/

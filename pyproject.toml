@@ -1,0 +1,78 @@
+[project]
+name = "marimo-desktop"
+version = "0.1.0"
+description = "Self-contained desktop app for marimo notebooks — bundled Python, nothing to install"
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [
+    { name = "jfCoronel", email = "jfcoroneltoro@gmail.com" }
+]
+requires-python = ">=3.12,<3.14"
+dependencies = [
+    "marimo>=0.24.0",
+]
+
+[project.scripts]
+marimo-desktop = "marimo_desktop.launcher:main"
+
+# Packaging tools are NOT project dependencies (they'd bloat the shipped app).
+# Install ux once, globally:  uv tool install ux-py
+
+[build-system]
+# Upper bound kept wide: ux ships its own newer uv to build the bundle.
+requires = ["uv_build>=0.9.29,<0.14"]
+build-backend = "uv_build"
+
+# ---------------------------------------------------------------------------
+# ux-py — packaging (github.com/i2y/ux). Install: `uv tool install ux-py`
+#   ux bundle --format app --output ./dist/            # .app (first run bootstraps online)
+#   ux bundle --format app --codesign --dmg --output ./dist/
+#   ux bundle --target linux-x86_64 --output ./dist/   # cross-compile
+# NOTE (v0.1.6): `include` must list "src/" or the package isn't shipped;
+# `--offline` produced a broken bundle in testing — see README.
+# ---------------------------------------------------------------------------
+[tool.ux]
+entry = "marimo-desktop"        # from [project.scripts]
+include = ["src/", "notebooks/"]  # ship the package + sample notebooks
+
+[tool.ux.macos]
+bundle_name = "marimo desktop"
+bundle_identifier = "io.github.jfcoronel.marimo-desktop"
+# icon = "assets/icon.png"      # PNG auto-converted to ICNS
+
+# ---------------------------------------------------------------------------
+# Briefcase — packaging option B (.app / .dmg on macOS, .msi on Windows, etc.)
+# Fill in bundle/author details, then: `uv run briefcase create macOS`
+# ---------------------------------------------------------------------------
+[tool.briefcase]
+project_name = "marimo desktop"
+bundle = "io.github.jfcoronel"
+version = "0.1.0"
+url = "https://github.com/jfcoronel/marimo-desktop"
+license.file = "LICENSE"
+author = "jfCoronel"
+author_email = "jfcoroneltoro@gmail.com"
+
+[tool.briefcase.app.marimo-desktop]
+formal_name = "marimo desktop"
+description = "Run marimo notebooks in a self-contained desktop app"
+long_description = """A desktop wrapper around the marimo reactive notebook.
+
+It ships its own Python interpreter and marimo install, starts the marimo
+server locally and opens it — so end users never touch pip, uv or a venv.
+"""
+sources = ["src/marimo_desktop"]
+# Notebooks shipped inside the app as read-only samples; the running app writes
+# to ~/"marimo notebooks" (see launcher.notebooks_dir).
+resources = ["notebooks"]
+requires = [
+    "marimo>=0.24.0",
+]
+
+[tool.briefcase.app.marimo-desktop.macOS]
+universal_build = true
+
+[tool.briefcase.app.marimo-desktop.windows]
+
+[tool.briefcase.app.marimo-desktop.linux]
