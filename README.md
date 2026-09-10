@@ -9,6 +9,8 @@ picker, browser picker) plus a `--headless` mode. Both `uv run marimo-desktop`
 and the packaged `dist/marimo-desktop.app` work. No `pywebview` — the launcher is
 a native control panel and marimo itself opens in a real browser.
 
+Design decisions, packaging caveats and the roadmap are in [`NOTES.md`](NOTES.md).
+
 ## How it works
 
 Default (`marimo-desktop`, no args) opens the Tk window (`gui.py`). It:
