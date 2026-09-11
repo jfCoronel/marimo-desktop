@@ -19,9 +19,9 @@ con Python embebido. Lo más cercano hoy es `uvx marimo edit`, que aún exige `u
 
 ## Estado actual (v1, verificado)
 
-- **Ventana de control Tk** (`gui.py`): selector de carpeta + `Recientes ▾`
+- **Ventana de control Tk** (`gui.py`): selector de carpeta + `Recent ▾`
   (hasta 8 carpetas de trabajo, en `config.json` → `recent_folders`), botón
-  Arrancar/Parar, URL clicable (abre el navegador por defecto) + botón Copiar
+  Start/Stop, URL clicable (abre el navegador por defecto) + botón Copy
   URL. No se abre ningún navegador automáticamente al arrancar. Cerrar la
   ventana para el servidor.
 - **Modo `--headless`** (`launcher.py`): arranca servidor, abre navegador, bloquea.
@@ -59,7 +59,7 @@ real:
 
 Se quitó el desplegable "Navegador" y el auto-abrir al arrancar el servidor.
 Ahora la ventana solo muestra el enlace clicable (abre el navegador por
-defecto del sistema) y un botón "Copiar URL":
+defecto del sistema) y un botón "Copy URL":
 
 - El desplegable dependía de `browsers._detected()` (rutas de `.app` en macOS,
   binarios en Linux) — código frágil y sin mantenimiento visible más allá del
@@ -76,9 +76,9 @@ defecto del sistema) y un botón "Copiar URL":
 
 En la sesión 2 se construyó `Nuevo notebook…` / `Abrir notebook…` /
 `Recientes ▾` en la ventana Tk — cada acción abría su propio `MarimoServer`
-de un solo fichero, independiente del servidor de Arrancar/Parar — a pesar
+de un solo fichero, independiente del servidor de Start/Stop — a pesar
 de que ya se sabía que marimo resuelve exactamente eso por su cuenta: al
-arrancar `marimo edit <carpeta>` (lo que ya hace Arrancar/Parar), marimo
+arrancar `marimo edit <carpeta>` (lo que ya hace Start/Stop), marimo
 activa internamente su `DirectoryWorkspace`
 (`_server/workspace/_directory.py`) y expone endpoints propios
 (`_server/api/endpoints/home.py`: `/workspace_files`, `/recent_files`,
@@ -89,12 +89,12 @@ listado de notebooks, creación de nuevos y recientes.
 redundancia con la home page de marimo no merecía la pena: se quitaron los
 tres controles y toda la infraestructura de sesiones sueltas
 (`_extra_servers`, `_pending`, `_poll_pending`, `_open_file`). En su lugar,
-`Recientes ▾` ahora recuerda **carpetas de trabajo** (`config.json` →
+`Recent ▾` ahora recuerda **carpetas de trabajo** (`config.json` →
 `recent_folders`, hasta 8), no ficheros — un complemento directo del
 selector de carpeta ya existente, sin tocar cómo se abren los notebooks
 (eso sigue siendo cosa de la home page de marimo). Deshabilitado junto con
-`Cambiar…` mientras el servidor corre, por la misma razón de siempre:
-cambiar la carpeta no tiene efecto hasta el próximo Arrancar.
+`Change…` mientras el servidor corre, por la misma razón de siempre:
+cambiar la carpeta no tiene efecto hasta el próximo arranque.
 
 ### Icono de la app
 
@@ -216,7 +216,7 @@ intérprete empaquetado que fallaba (`tk.Tk()` pasó de excepción a `OK`).
 
 ## Roadmap
 
-- [x] Ventana Tk (arrancar/parar, selector de carpeta + recientes, URL
+- [x] Ventana Tk (start/stop, selector de carpeta + recientes, URL
       clicable + copiar)
 - [x] Icono de la app (`assets/icon.png` → `.icns`) + nombre en el Dock
       (`CFBundleName` ya estaba bien) — solo visible en el `.app` empaquetado,

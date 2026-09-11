@@ -4,7 +4,7 @@ A self-contained desktop app for [marimo](https://github.com/marimo-team/marimo)
 it ships its own Python interpreter and marimo install, so there is nothing to
 `pip install` and no venv to manage. Double-click → marimo opens.
 
-Status: **v1, verified** — a small Tk control window (`Arrancar/Parar`, folder
+Status: **v1, verified** — a small Tk control window (`Start/Stop`, folder
 picker + recent folders, clickable URL + copy button) plus a `--headless`
 mode. Both `uv run marimo-desktop` and the packaged `dist/marimo-desktop.app`
 work. No `pywebview` — the launcher is a native control panel and marimo
@@ -17,14 +17,14 @@ Design decisions, packaging caveats and the roadmap are in [`NOTES.md`](NOTES.md
 Default (`marimo-desktop`, no args) opens the Tk window (`gui.py`). It:
 
 1. lets you pick the notebooks folder (remembered in `config.json`), or jump
-   back to one of the last 8 via **Recientes ▾**
-2. **Arrancar marimo** → `server.py` starts `python -m marimo edit <folder>
+   back to one of the last 8 via **Recent ▾**
+2. **Start marimo** → `server.py` starts `python -m marimo edit <folder>
    --headless --no-token` on a free `127.0.0.1` port (bundled interpreter)
 3. polls until the server answers, then shows the URL as a clickable link
-   (opens it in the system's default browser) plus a **Copiar URL** button —
+   (opens it in the system's default browser) plus a **Copy URL** button —
    nothing opens automatically, so pasting the URL into a different browser is
    just as easy as clicking the link
-4. **Parar** / closing the window terminates the server
+4. **Stop** / closing the window terminates the server
 
 A small footer shows the Python/`uv`/marimo versions actually in use (read
 from `pyvenv.cfg` and package metadata — no subprocess calls) plus a
@@ -102,7 +102,7 @@ community); a `[tool.briefcase]` block is kept in `pyproject.toml` for that.
 
 ## Roadmap
 
-- [x] Tk control window (start/stop, folder picker + recent folders,
+- [x] Tk control window (Start/Stop, folder picker + recent folders,
       clickable URL + copy button)
 - [x] App icon + Dock name polish (`assets/icon.png` → `.icns`)
 - [ ] File association for `.py` marimo notebooks

@@ -114,21 +114,21 @@ class App:
         # --- folder row ---------------------------------------------------
         folder_row = ttk.Frame(outer)
         folder_row.grid(row=0, column=0, sticky="ew")
-        ttk.Label(folder_row, text="Carpeta:").grid(row=0, column=0, sticky="w")
+        ttk.Label(folder_row, text="Folder:").grid(row=0, column=0, sticky="w")
         self.folder_var = tk.StringVar(value=_shorten(self.folder))
         ttk.Label(folder_row, textvariable=self.folder_var, foreground="#555").grid(
             row=0, column=1, sticky="w", padx=(6, 10)
         )
-        self.change_btn = ttk.Button(folder_row, text="Cambiar…", command=self._choose_folder)
+        self.change_btn = ttk.Button(folder_row, text="Change…", command=self._choose_folder)
         self.change_btn.grid(row=0, column=2, sticky="e")
-        self.recent_btn = ttk.Menubutton(folder_row, text="Recientes ▾")
+        self.recent_btn = ttk.Menubutton(folder_row, text="Recent ▾")
         self.recent_menu = tk.Menu(self.recent_btn, tearoff=False, postcommand=self._build_recent_menu)
         self.recent_btn.config(menu=self.recent_menu)
         self.recent_btn.grid(row=0, column=3, sticky="e", padx=(6, 0))
         folder_row.columnconfigure(1, weight=1)
 
         # --- start / stop ----------------------------------------------------
-        self.toggle_btn = ttk.Button(outer, text="▶  Arrancar marimo", command=self._toggle)
+        self.toggle_btn = ttk.Button(outer, text="▶  Start marimo", command=self._toggle)
         self.toggle_btn.grid(row=1, column=0, sticky="ew", pady=(12, 8))
 
         # --- server controls (enabled only while running) -------------------
@@ -141,11 +141,11 @@ class App:
         self.url_label.grid(row=0, column=0, sticky="w")
         self.url_label.bind("<Button-1>", lambda _e: self._open())
 
-        self.copy_btn = ttk.Button(box, text="Copiar URL", command=self._copy_url)
+        self.copy_btn = ttk.Button(box, text="Copy URL", command=self._copy_url)
         self.copy_btn.grid(row=0, column=1, sticky="e", padx=(6, 0))
 
         # --- status ------------------------------------------------------
-        self.status_var = tk.StringVar(value="Listo.")
+        self.status_var = tk.StringVar(value="Ready.")
         ttk.Label(outer, textvariable=self.status_var, foreground="#777").grid(
             row=3, column=0, sticky="w", pady=(12, 0)
         )
@@ -176,7 +176,7 @@ class App:
 
     def _on_close(self) -> None:
         if self.server and self.server.running:
-            self.status_var.set("Parando el servidor…")
+            self.status_var.set("Stopping the server…")
             self.root.update_idletasks()
             self.server.stop()
         self.root.destroy()
@@ -184,7 +184,7 @@ class App:
     # -- folder --------------------------------------------------------
     def _choose_folder(self) -> None:
         picked = filedialog.askdirectory(
-            initialdir=str(self.folder), title="Elige la carpeta de notebooks"
+            initialdir=str(self.folder), title="Choose the notebooks folder"
         )
         if not picked:
             return
@@ -209,7 +209,7 @@ class App:
             config.set("recent_folders", valid)
         choices = [p for p in valid if Path(p) != self.folder]
         if not choices:
-            self.recent_menu.add_command(label="(sin recientes)", state="disabled")
+            self.recent_menu.add_command(label="(no recent folders)", state="disabled")
             return
         for raw in choices:
             path = Path(raw)
@@ -229,26 +229,26 @@ class App:
         try:
             self.server.start()
         except OSError as exc:
-            self.status_var.set(f"No se pudo arrancar: {exc}")
+            self.status_var.set(f"Couldn't start: {exc}")
             self.server = None
             return
         self._elapsed = 0.0
-        self.toggle_btn.config(text="■  Parar")
+        self.toggle_btn.config(text="■  Stop")
         self.change_btn.config(state="disabled")
         self.recent_btn.config(state="disabled")
-        self.status_var.set("Arrancando marimo…")
+        self.status_var.set("Starting marimo…")
         self.root.after(_POLL_MS, self._tick)
 
     def _stop(self) -> None:
         if self.server:
             self.server.stop()
             self.server = None
-        self.toggle_btn.config(text="▶  Arrancar marimo")
+        self.toggle_btn.config(text="▶  Start marimo")
         self.change_btn.config(state="normal")
         self.recent_btn.config(state="normal")
         self.url_var.set("—")
         self._server_controls_enabled(enabled=False)
-        self.status_var.set("Servidor parado.")
+        self.status_var.set("Server stopped.")
 
     def _tick(self) -> None:
         if not self.server:
@@ -258,16 +258,16 @@ class App:
             self.url_var.set(self.server.url)
             self._server_controls_enabled(enabled=True)
             self.status_var.set(
-                f"marimo listo en {self._elapsed:.1f}s. Haz clic en el enlace para abrirlo."
+                f"marimo ready in {self._elapsed:.1f}s. Click the link to open it."
             )
             return
         if state == "exited":
-            self.status_var.set("marimo se cerró antes de estar listo.")
+            self.status_var.set("marimo exited before it was ready.")
             self._stop()
             return
         self._elapsed += _POLL_MS / 1000
         if self._elapsed >= _STARTUP_TIMEOUT_S:
-            self.status_var.set(f"Sin respuesta tras {_STARTUP_TIMEOUT_S}s. Parando.")
+            self.status_var.set(f"No response after {_STARTUP_TIMEOUT_S}s. Stopping.")
             self._stop()
             return
         self.root.after(_POLL_MS, self._tick)
@@ -286,7 +286,7 @@ class App:
             return
         self.root.clipboard_clear()
         self.root.clipboard_append(self.server.url)
-        self.status_var.set("URL copiada al portapapeles.")
+        self.status_var.set("URL copied to clipboard.")
 
 
 def main() -> int:
