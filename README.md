@@ -5,9 +5,10 @@ it ships its own Python interpreter and marimo install, so there is nothing to
 `pip install` and no venv to manage. Double-click → marimo opens.
 
 Status: **v1, verified** — a small Tk control window (`Arrancar/Parar`, folder
-picker, browser picker) plus a `--headless` mode. Both `uv run marimo-desktop`
-and the packaged `dist/marimo-desktop.app` work. No `pywebview` — the launcher is
-a native control panel and marimo itself opens in a real browser.
+picker + recent folders, clickable URL + copy button) plus a `--headless`
+mode. Both `uv run marimo-desktop` and the packaged `dist/marimo-desktop.app`
+work. No `pywebview` — the launcher is a native control panel and marimo
+itself opens in a real browser.
 
 Design decisions, packaging caveats and the roadmap are in [`NOTES.md`](NOTES.md).
 
@@ -15,12 +16,24 @@ Design decisions, packaging caveats and the roadmap are in [`NOTES.md`](NOTES.md
 
 Default (`marimo-desktop`, no args) opens the Tk window (`gui.py`). It:
 
-1. lets you pick the notebooks folder (remembered in `config.json`)
+1. lets you pick the notebooks folder (remembered in `config.json`), or jump
+   back to one of the last 8 via **Recientes ▾**
 2. **Arrancar marimo** → `server.py` starts `python -m marimo edit <folder>
    --headless --no-token` on a free `127.0.0.1` port (bundled interpreter)
-3. polls until the server answers, then opens it in the chosen browser
-   (`Predeterminado` or a specific one detected on the system)
+3. polls until the server answers, then shows the URL as a clickable link
+   (opens it in the system's default browser) plus a **Copiar URL** button —
+   nothing opens automatically, so pasting the URL into a different browser is
+   just as easy as clicking the link
 4. **Parar** / closing the window terminates the server
+
+A small footer shows the Python/`uv`/marimo versions actually in use (read
+from `pyvenv.cfg` and package metadata — no subprocess calls) plus a
+copyright line.
+
+Creating/opening individual notebooks is deliberately left to marimo itself:
+pointing `marimo edit` at a folder (step 2 above) already gives you its own
+directory home page in the browser — new notebook, open, recents — so the Tk
+window doesn't duplicate that; see NOTES.md.
 
 `marimo-desktop --headless [notebook]` skips the window: start, open browser,
 block until Ctrl-C — for scripts and automation. `--run` uses app mode
@@ -32,9 +45,9 @@ Notebooks folder:
 - packaged app: `~/marimo notebooks` (created + seeded with samples on first run)
 - override: `MARIMO_DESKTOP_NOTEBOOKS=/some/path`, or pick one in the window
 
-Modules: `gui.py` (window) · `server.py` (`MarimoServer`) · `browsers.py`
-(detect + open) · `config.py` (JSON prefs) · `paths.py` (folder resolution) ·
-`launcher.py` (entry point / headless).
+Modules: `gui.py` (window) · `server.py` (`MarimoServer`) · `browsers.py` (open
+the default browser) · `config.py` (JSON prefs) · `paths.py` (folder
+resolution) · `launcher.py` (entry point / headless).
 
 ## Develop
 
@@ -49,7 +62,9 @@ uv run marimo-desktop --headless --run notebooks/welcome.py   # app mode
 ## Package (ux-py)
 
 Packaging uses [`ux-py`](https://github.com/i2y/ux), configured in `pyproject.toml`
-under `[tool.ux]`. Install it once, globally:
+under `[tool.ux]`. The app icon (`assets/icon.png`, original artwork, not
+marimo's own logo) is converted to `.icns` automatically on build; the Dock
+name comes from `bundle_name`. Install it once, globally:
 
 ```sh
 uv tool install ux-py
@@ -87,9 +102,8 @@ community); a `[tool.briefcase]` block is kept in `pyproject.toml` for that.
 
 ## Roadmap
 
-- [x] Tk control window (start/stop, folder picker, browser picker)
-- [ ] Phase 2: **New notebook…** (name + folder → stub → open) and
-      **Open notebook…** (file picker → `marimo edit <file>`), recent list
-- [ ] App icon + Dock name polish
+- [x] Tk control window (start/stop, folder picker + recent folders,
+      clickable URL + copy button)
+- [x] App icon + Dock name polish (`assets/icon.png` → `.icns`)
 - [ ] File association for `.py` marimo notebooks
 - [ ] CI matrix (macOS / Windows / Linux) producing installers on tag

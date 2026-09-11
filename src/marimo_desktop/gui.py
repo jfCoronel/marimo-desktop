@@ -1,22 +1,90 @@
 """A tiny Tk control window: pick a folder, start/stop marimo, open it.
 
-Notebook creation / browsing is deliberately out of scope for v1 — see README.
+Recent working folders are remembered too. New/open-notebook actions were
+deliberately left out — marimo's own directory home page already covers
+that (and recents) once you're inside a folder-wide session; see NOTES.md.
 """
 
 from __future__ import annotations
 
+import os
+import platform
 import sys
-import tkinter as tk
+from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
-from tkinter import filedialog, ttk
 
 from marimo_desktop import config
-from marimo_desktop.browsers import DEFAULT_LABEL, available_browsers, open_url
+from marimo_desktop.browsers import open_url
 from marimo_desktop.paths import default_notebooks_dir, ensure_notebooks_dir
 from marimo_desktop.server import MarimoServer
 
 _POLL_MS = 300
 _STARTUP_TIMEOUT_S = 40
+_MAX_RECENTS = 8
+_COPYRIGHT_YEAR = 2026
+
+
+def _uv_version() -> str:
+    """`uv` writes its own version into every venv's pyvenv.cfg — read it
+    from there instead of shelling out to an `uv` that may not be on PATH
+    inside the packaged app."""
+    cfg = Path(sys.prefix) / "pyvenv.cfg"
+    try:
+        for line in cfg.read_text(encoding="utf-8").splitlines():
+            if line.strip().startswith("uv"):
+                return line.split("=", 1)[1].strip()
+    except OSError:
+        pass
+    return "?"
+
+
+def _footer_text() -> str:
+    try:
+        marimo_version = version("marimo")
+    except PackageNotFoundError:
+        marimo_version = "?"
+    versions = (
+        f"Python {platform.python_version()} · uv {_uv_version()} · "
+        f"marimo {marimo_version}"
+    )
+    return f"{versions}\n© {_COPYRIGHT_YEAR} jfCoronel"
+
+
+def _find_lib_dir(base_lib: Path, prefix: str, marker: str) -> Path | None:
+    for cand in sorted(base_lib.glob(f"{prefix}[0-9]*"), reverse=True):
+        if cand.is_dir() and (cand / marker).is_file():
+            return cand
+    return None
+
+
+def _fix_tcl_tk_library_paths() -> None:
+    """Point Tk at the Tcl/Tk library files it fails to find on its own.
+
+    `uv`/`ux` build the app's venv by symlinking to a shared interpreter
+    install (``sys.base_prefix``); tkinter's own search for ``tcl*``/``tk*``
+    resolves against the venv (``sys.prefix``) instead, where those library
+    folders don't exist — so plain `tk.Tk()` raises `TclError: Can't find a
+    usable init.tcl`. Only matters inside a venv; harmless no-op otherwise.
+    """
+    if sys.prefix == sys.base_prefix:
+        return
+    base_lib = Path(sys.base_prefix) / "lib"
+    if not base_lib.is_dir():
+        return
+    if "TCL_LIBRARY" not in os.environ:
+        tcl_dir = _find_lib_dir(base_lib, "tcl", "init.tcl")
+        if tcl_dir:
+            os.environ["TCL_LIBRARY"] = str(tcl_dir)
+    if "TK_LIBRARY" not in os.environ:
+        tk_dir = _find_lib_dir(base_lib, "tk", "tk.tcl")
+        if tk_dir:
+            os.environ["TK_LIBRARY"] = str(tk_dir)
+
+
+_fix_tcl_tk_library_paths()
+
+import tkinter as tk  # noqa: E402 — must follow the library-path fix above
+from tkinter import filedialog, ttk  # noqa: E402
 
 
 def _shorten(path: Path, parts: int = 3) -> str:
@@ -32,6 +100,7 @@ class App:
         )
         self.server: MarimoServer | None = None
         self._elapsed = 0.0
+        self._add_recent(self.folder)
 
         self.root = tk.Tk()
         self.root.title("marimo desktop")
@@ -52,6 +121,10 @@ class App:
         )
         self.change_btn = ttk.Button(folder_row, text="Cambiar…", command=self._choose_folder)
         self.change_btn.grid(row=0, column=2, sticky="e")
+        self.recent_btn = ttk.Menubutton(folder_row, text="Recientes ▾")
+        self.recent_menu = tk.Menu(self.recent_btn, tearoff=False, postcommand=self._build_recent_menu)
+        self.recent_btn.config(menu=self.recent_menu)
+        self.recent_btn.grid(row=0, column=3, sticky="e", padx=(6, 0))
         folder_row.columnconfigure(1, weight=1)
 
         # --- start / stop ----------------------------------------------------
@@ -61,35 +134,30 @@ class App:
         # --- server controls (enabled only while running) -------------------
         box = ttk.Frame(outer)
         box.grid(row=2, column=0, sticky="ew")
-        box.columnconfigure(1, weight=1)
+        box.columnconfigure(0, weight=1)
 
         self.url_var = tk.StringVar(value="—")
         self.url_label = tk.Label(box, textvariable=self.url_var, fg="#0a58ca", cursor="hand2")
-        self.url_label.grid(row=0, column=0, columnspan=3, sticky="w", pady=(0, 8))
+        self.url_label.grid(row=0, column=0, sticky="w")
         self.url_label.bind("<Button-1>", lambda _e: self._open())
 
-        ttk.Label(box, text="Navegador:").grid(row=1, column=0, sticky="w")
-        self.browser_var = tk.StringVar(value=config.get("browser", DEFAULT_LABEL))
-        choices = available_browsers()
-        if self.browser_var.get() not in choices:
-            self.browser_var.set(DEFAULT_LABEL)
-        self.browser_menu = ttk.OptionMenu(
-            box, self.browser_var, self.browser_var.get(), *choices, command=self._remember_browser
-        )
-        self.browser_menu.grid(row=1, column=1, sticky="w", padx=6)
-
-        btns = ttk.Frame(box)
-        btns.grid(row=1, column=2, sticky="e")
-        self.open_btn = ttk.Button(btns, text="Abrir", command=self._open)
-        self.open_btn.grid(row=0, column=0)
-        self.copy_btn = ttk.Button(btns, text="Copiar URL", command=self._copy_url)
-        self.copy_btn.grid(row=0, column=1, padx=(6, 0))
+        self.copy_btn = ttk.Button(box, text="Copiar URL", command=self._copy_url)
+        self.copy_btn.grid(row=0, column=1, sticky="e", padx=(6, 0))
 
         # --- status ------------------------------------------------------
         self.status_var = tk.StringVar(value="Listo.")
         ttk.Label(outer, textvariable=self.status_var, foreground="#777").grid(
             row=3, column=0, sticky="w", pady=(12, 0)
         )
+
+        # --- footer: runtime versions + copyright -------------------------
+        ttk.Label(
+            outer,
+            text=_footer_text(),
+            foreground="#999",
+            font=("TkDefaultFont", 9),
+            justify="left",
+        ).grid(row=4, column=0, sticky="w", pady=(10, 0))
 
         self._server_controls_enabled(enabled=False)
         self._bring_to_front()
@@ -120,9 +188,34 @@ class App:
         )
         if not picked:
             return
-        self.folder = ensure_notebooks_dir(Path(picked))
+        self._use_folder(Path(picked))
+
+    def _use_folder(self, path: Path) -> None:
+        self.folder = ensure_notebooks_dir(path)
         self.folder_var.set(_shorten(self.folder))
         config.set("notebooks_dir", str(self.folder))
+        self._add_recent(self.folder)
+
+    def _add_recent(self, path: Path) -> None:
+        recents = [p for p in config.get("recent_folders", []) if p != str(path)]
+        recents.insert(0, str(path))
+        config.set("recent_folders", recents[:_MAX_RECENTS])
+
+    def _build_recent_menu(self) -> None:
+        self.recent_menu.delete(0, "end")
+        stored = config.get("recent_folders", [])
+        valid = [p for p in stored if Path(p).is_dir()]
+        if valid != stored:
+            config.set("recent_folders", valid)
+        choices = [p for p in valid if Path(p) != self.folder]
+        if not choices:
+            self.recent_menu.add_command(label="(sin recientes)", state="disabled")
+            return
+        for raw in choices:
+            path = Path(raw)
+            self.recent_menu.add_command(
+                label=_shorten(path), command=lambda p=path: self._use_folder(p)
+            )
 
     # -- start / stop -------------------------------------------------
     def _toggle(self) -> None:
@@ -142,6 +235,7 @@ class App:
         self._elapsed = 0.0
         self.toggle_btn.config(text="■  Parar")
         self.change_btn.config(state="disabled")
+        self.recent_btn.config(state="disabled")
         self.status_var.set("Arrancando marimo…")
         self.root.after(_POLL_MS, self._tick)
 
@@ -151,6 +245,7 @@ class App:
             self.server = None
         self.toggle_btn.config(text="▶  Arrancar marimo")
         self.change_btn.config(state="normal")
+        self.recent_btn.config(state="normal")
         self.url_var.set("—")
         self._server_controls_enabled(enabled=False)
         self.status_var.set("Servidor parado.")
@@ -162,8 +257,9 @@ class App:
         if state == "ready":
             self.url_var.set(self.server.url)
             self._server_controls_enabled(enabled=True)
-            self.status_var.set(f"marimo listo en {self._elapsed:.1f}s.")
-            self._open()
+            self.status_var.set(
+                f"marimo listo en {self._elapsed:.1f}s. Haz clic en el enlace para abrirlo."
+            )
             return
         if state == "exited":
             self.status_var.set("marimo se cerró antes de estar listo.")
@@ -178,14 +274,12 @@ class App:
 
     # -- running actions --------------------------------------------
     def _server_controls_enabled(self, *, enabled: bool) -> None:
-        state = "normal" if enabled else "disabled"
-        for widget in (self.browser_menu, self.open_btn, self.copy_btn):
-            widget.config(state=state)
+        self.copy_btn.config(state="normal" if enabled else "disabled")
         self.url_label.config(cursor="hand2" if enabled else "")
 
     def _open(self) -> None:
         if self.server and self.server.running:
-            open_url(self.server.url, self.browser_var.get())
+            open_url(self.server.url)
 
     def _copy_url(self) -> None:
         if not (self.server and self.server.running):
@@ -193,9 +287,6 @@ class App:
         self.root.clipboard_clear()
         self.root.clipboard_append(self.server.url)
         self.status_var.set("URL copiada al portapapeles.")
-
-    def _remember_browser(self, value: str) -> None:
-        config.set("browser", value)
 
 
 def main() -> int:

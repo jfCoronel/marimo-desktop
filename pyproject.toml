@@ -39,7 +39,7 @@ include = ["src/", "notebooks/"]  # ship the package + sample notebooks
 [tool.ux.macos]
 bundle_name = "marimo desktop"
 bundle_identifier = "io.github.jfcoronel.marimo-desktop"
-# icon = "assets/icon.png"      # PNG auto-converted to ICNS
+icon = "assets/icon.png"        # PNG auto-converted to ICNS
 
 # ---------------------------------------------------------------------------
 # Briefcase — packaging option B (.app / .dmg on macOS, .msi on Windows, etc.)
@@ -63,6 +63,7 @@ It ships its own Python interpreter and marimo install, starts the marimo
 server locally and opens it — so end users never touch pip, uv or a venv.
 """
 sources = ["src/marimo_desktop"]
+icon = "assets/icon"            # briefcase looks for assets/icon.png
 # Notebooks shipped inside the app as read-only samples; the running app writes
 # to ~/"marimo notebooks" (see launcher.notebooks_dir).
 resources = ["notebooks"]
