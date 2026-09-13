@@ -13,7 +13,7 @@ import sys
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 
-from marimo_desktop import config
+from marimo_desktop import __version__, config
 from marimo_desktop.browsers import open_url
 from marimo_desktop.paths import default_notebooks_dir, ensure_notebooks_dir
 from marimo_desktop.server import MarimoServer
@@ -43,8 +43,8 @@ def _footer_text() -> str:
         marimo_version = version("marimo")
     except PackageNotFoundError:
         marimo_version = "?"
-    versions = f"Python {platform.python_version()} · uv {_uv_version()} · marimo {marimo_version}"
-    return f"{versions}\n© {_COPYRIGHT_YEAR} jfCoronel"
+    runtime = f"Python {platform.python_version()} · uv {_uv_version()} · marimo {marimo_version}"
+    return f"marimo desktop {__version__} · © {_COPYRIGHT_YEAR} jfCoronel\n{runtime}"
 
 
 def _find_lib_dir(base_lib: Path, prefix: str, marker: str) -> Path | None:
@@ -105,7 +105,7 @@ class App:
         _add_recent(self.folder)
 
         self.root = tk.Tk()
-        self.root.title("marimo desktop")
+        self.root.title(f"marimo desktop {__version__}")
         self.root.resizable(width=False, height=False)
         self.root.protocol("WM_DELETE_WINDOW", self._on_close)
 

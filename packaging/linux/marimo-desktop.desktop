@@ -1,0 +1,13 @@
+[Desktop Entry]
+Type=Application
+Name=marimo desktop
+GenericName=Reactive notebook
+Comment=Run marimo notebooks in a self-contained desktop app
+# Rewritten to an absolute path by install.sh — a desktop launcher does not
+# necessarily have ~/.local/bin on its PATH.
+Exec=__EXEC__
+Icon=marimo-desktop
+Terminal=false
+Categories=Development;Science;IDE;
+Keywords=marimo;notebook;python;reactive;
+StartupNotify=true

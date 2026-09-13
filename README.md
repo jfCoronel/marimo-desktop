@@ -13,9 +13,11 @@ platforms and launches it to check marimo actually comes up. No `pywebview` —
 the launcher is a native control panel and marimo itself opens in a real
 browser.
 
-Not yet solved for distribution to other people: macOS code signing and
-notarisation (an unsigned download trips Gatekeeper), and the Linux/Windows
-builds are bare binaries — no icon, no desktop integration.
+Downloads for all three platforms are on the
+[releases page](https://github.com/jfCoronel/marimo-desktop/releases). They
+are **unsigned** — no Apple Developer account, no Windows certificate — so
+macOS and Windows will both warn you; the release notes spell out the
+standard steps to open them anyway.
 
 Design decisions, packaging caveats and the roadmap are in [`NOTES.md`](NOTES.md).
 
@@ -141,6 +143,37 @@ downloadable artifacts for 14 days.
 If ux-py stays too flaky, the fallback is BeeWare Briefcase (mature, bigger
 community); a `[tool.briefcase]` block is kept in `pyproject.toml` for that.
 
+## Release
+
+Tag and push; [`release.yml`](.github/workflows/release.yml) does the rest —
+builds on each platform's own runner, launches every artifact to check it
+serves marimo, then publishes a GitHub release.
+
+```sh
+# bump version in pyproject.toml and src/marimo_desktop/__init__.py first
+git tag v0.3.0 && git push origin v0.3.0
+```
+
+The version in the tag must match `pyproject.toml` — the workflow refuses the
+build otherwise. A release can be rebuilt from the Actions tab
+("Run workflow" → existing tag) without re-tagging.
+
+What each platform gets:
+
+| Platform | Artifact | Built with |
+|---|---|---|
+| macOS (arm64 + Intel) | `.dmg`, drag to Applications | `ux bundle --format app --dmg` |
+| Windows x64 | per-user installer `.exe` | [Inno Setup](packaging/windows/installer.iss) |
+| Linux x86_64 | `.tar.gz` + `install.sh` | [`scripts/package_linux.py`](scripts/package_linux.py) |
+
+`--format app` is macOS-only, so on Linux and Windows ux emits a bare
+executable and the desktop integration (icon, menu entry, uninstaller) is
+added by the packaging step. Signing is skipped: `ux --codesign` needs an
+Apple Developer ID, and `--dmg` works fine without it — the bundle stays
+ad-hoc signed. Install instructions for unsigned builds live in
+[`scripts/release_notes.py`](scripts/release_notes.py), which generates the
+release body.
+
 ## Roadmap
 
 - [x] Tk control window (Start/Stop, folder picker + recent folders,
@@ -150,5 +183,9 @@ community); a `[tool.briefcase]` block is kept in `pyproject.toml` for that.
 - [x] Linux and Windows bundles built and launched in CI (macOS `.app` ~18 MB,
       Linux binary 24 MB, Windows `.exe` 22 MB)
 - [ ] File association for `.py` marimo notebooks
+- [ ] Signing + notarisation (needs a paid Apple Developer account; until then
+      downloads need the manual "open anyway" step)
 - [ ] Release workflow: signed/notarised installers published on tag
-- [ ] Icon / desktop integration for the Linux and Windows builds
+- [x] Icon / desktop integration for Linux (.desktop + installer) and Windows
+      (Inno Setup installer)
+- [x] Tagged releases publishing installers for all three platforms

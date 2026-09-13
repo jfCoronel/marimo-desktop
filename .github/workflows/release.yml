@@ -1,0 +1,181 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to build (must already exist, e.g. v0.3.0)"
+        required: true
+
+permissions:
+  contents: write
+
+env:
+  UV_PYTHON_PREFERENCE: only-managed
+
+jobs:
+  # Single source of truth for the version, and a guard against tagging a
+  # commit whose pyproject still says something else.
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+      tag: ${{ steps.v.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+
+      - id: v
+        shell: bash
+        run: |
+          tag="${{ github.event.inputs.tag || github.ref_name }}"
+          version="${tag#v}"
+          declared=$(grep -m1 '^version = ' pyproject.toml | cut -d'"' -f2)
+          if [ "$version" != "$declared" ]; then
+            echo "::error::tag $tag implies version $version but pyproject.toml says $declared"
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
+  macos:
+    needs: version
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-latest   # Apple Silicon
+            arch: arm64
+          - runner: macos-13       # Intel
+            arch: x86_64
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.version.outputs.tag }}
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: false
+
+      - run: uv tool install ux-py
+
+      # --codesign needs an Apple Developer ID we don't have; ux still ad-hoc
+      # signs the bundle, and --dmg works without it.
+      - run: ux bundle --format app --dmg --output ./dist/
+
+      - name: Smoke test the app
+        run: uv run --no-project python scripts/smoke_bundle.py dist/marimo-desktop.app
+
+      - name: Name the DMG after the release
+        run: |
+          mv dist/marimo-desktop.dmg \
+             "dist/marimo-desktop-${{ needs.version.outputs.version }}-macos-${{ matrix.arch }}.dmg"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-macos-${{ matrix.arch }}
+          path: dist/*.dmg
+          if-no-files-found: error
+
+  linux:
+    needs: version
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.version.outputs.tag }}
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: false
+
+      - run: uv tool install ux-py
+
+      - run: ux bundle --output ./dist/
+
+      - name: Smoke test the binary
+        run: uv run --no-project python scripts/smoke_bundle.py dist/marimo-desktop
+
+      # ux emits a bare executable on Linux; add the icon, .desktop entry and
+      # a per-user installer around it.
+      - name: Build the tarball
+        run: |
+          uv run --no-project python scripts/package_linux.py \
+            dist/marimo-desktop "${{ needs.version.outputs.version }}"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-linux
+          path: dist/*.tar.gz
+          if-no-files-found: error
+
+  windows:
+    needs: version
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.version.outputs.tag }}
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: false
+
+      - run: uv tool install ux-py
+
+      - run: ux bundle --output ./dist/
+
+      - name: Smoke test the binary
+        run: uv run --no-project python scripts/smoke_bundle.py dist/marimo-desktop.exe
+
+      - name: Build the installer
+        shell: pwsh
+        run: |
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) {
+            choco install innosetup -y --no-progress
+            $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          }
+          & $iscc "/DAppVersion=${{ needs.version.outputs.version }}" packaging\windows\installer.iss
+          if ($LASTEXITCODE -ne 0) { throw "ISCC failed" }
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-windows
+          path: dist/*-setup.exe
+          if-no-files-found: error
+
+  publish:
+    needs: [version, macos, linux, windows]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.version.outputs.tag }}
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          pattern: release-*
+          merge-multiple: true
+
+      - name: Write the release notes
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          python3 scripts/release_notes.py "$VERSION" > notes.md
+          cat notes.md
+          ls -la artifacts/
+
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ needs.version.outputs.tag }}" \
+            --title "marimo desktop ${{ needs.version.outputs.version }}" \
+            --notes-file notes.md \
+            artifacts/*

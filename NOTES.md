@@ -260,6 +260,50 @@ Lo que sigue **sin** resolver para distribuir fuera de tu máquina: firma y
 notarización (macOS pedirá permiso o dirá "app dañada"), y que los binarios
 de Linux/Windows no tienen icono ni integración de escritorio.
 
+### Instaladores y release (sesión 5)
+
+Decisión del usuario: **no se paga la cuenta de Apple** (99 $/año), así que
+las descargas van sin firmar y quien las instale tiene que forzar la
+apertura. Consecuencias comprobadas, no supuestas:
+
+- `ux bundle --codesign` **falla** sin Developer ID (*"No code signing
+  identities found"*), pero **`--dmg` solo, sin `--codesign`, sí funciona** →
+  ese es el camino. El `.app` queda con firma ad-hoc (la que ux pone siempre).
+- `spctl -a -vvv -t exec dist/marimo-desktop.app` → rechazado. Y en macOS 15+
+  (aquí 26.6.2) Apple **eliminó el atajo de clic derecho → Abrir** para apps
+  no notarizadas: la ruta real es Ajustes del Sistema → Privacidad y
+  seguridad → *Abrir igualmente*, o `xattr -dr com.apple.quarantine`. Las
+  notas de la release lo explican paso a paso; si no, la descarga es
+  inservible para la mayoría.
+
+Empaquetado por plataforma (`--format app` es solo macOS, así que Linux y
+Windows reciben un binario pelado y hay que vestirlo):
+
+- **Linux**: `scripts/package_linux.py` arma un `.tar.gz` con el binario, el
+  icono, un `.desktop` y un `install.sh` per-user (todo bajo `~/.local`, sin
+  root). El `Exec=` del `.desktop` va con marcador `__EXEC__` que el
+  instalador sustituye por la ruta absoluta: un lanzador del menú **no tiene
+  por qué llevar `~/.local/bin` en el `PATH`**.
+- **Windows**: instalador de **Inno Setup**
+  (`packaging/windows/installer.iss`), `PrivilegesRequired=lowest` para que no
+  pida administrador. `ArchitecturesAllowed=x64` en vez de `x64compatible`
+  porque este último exige Inno 6.3+ y no controlamos la versión del runner.
+  El `.exe` que produce ux lleva el icono genérico de ux; los accesos directos
+  apuntan al nuestro vía `IconFilename` (`assets/icon.ico`, generado con
+  Pillow desde el PNG igual que el `.icns`).
+- **macOS**: `.dmg` de ux, con el `.app` y el enlace a `/Applications`
+  dentro (verificado montándolo).
+
+El workflow `release.yml` se dispara con tags `v*`, **rechaza el build si el
+tag no coincide con la versión de `pyproject.toml`**, construye en el runner
+nativo de cada plataforma (incluido `macos-13` para Intel), pasa el smoke
+test a cada artefacto y publica la release. Se puede relanzar desde la
+pestaña Actions con un tag existente sin volver a etiquetar.
+
+La versión ahora se ve en la app: título de la ventana y primera línea del
+pie (`marimo desktop 0.3.0 · © 2026 jfCoronel`), leída de `__version__` —
+necesario para saber qué build tienes cuando la descargas.
+
 ### ux-py como empaquetador (con Briefcase de reserva)
 
 [`ux-py`](https://github.com/i2y/ux) (`ux bundle`) hace exactamente lo que el plan
@@ -337,7 +381,9 @@ intérprete empaquetado que fallaba (`tk.Tk()` pasó de excepción a `OK`).
   al editor del usuario; probablemente `LSHandlerRank = Alternate`.
 - [ ] `bundle_identifier` en minúsculas ya es correcto (reverse-DNS); revisar solo
   si cambia el usuario de GitHub
-- [ ] Workflow de release: instaladores firmados/notarizados publicados en cada tag
+- [x] Workflow de release: instaladores para las tres plataformas publicados
+  en cada tag (sin firmar, por decisión de coste)
+- [ ] Firma + notarización, si algún día se paga la cuenta de Apple
 - [x] Construir y ejecutar de verdad los bundles de Linux y Windows (CI, con
   smoke test del artefacto en las tres plataformas)
 

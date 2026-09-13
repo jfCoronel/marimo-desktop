@@ -160,3 +160,10 @@ def test_footer_reports_versions_and_copyright() -> None:
     assert "Python" in text
     assert "marimo" in text
     assert f"© {gui._COPYRIGHT_YEAR}" in text
+
+
+def test_footer_shows_the_app_version() -> None:
+    """Users need to be able to tell which build they downloaded."""
+    from marimo_desktop import __version__
+
+    assert f"marimo desktop {__version__}" in gui._footer_text()
