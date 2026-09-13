@@ -15,7 +15,9 @@ Exits 0 when the bundle printed a working URL, 1 otherwise.
 from __future__ import annotations
 
 import argparse
+import contextlib
 import os
+import signal
 import subprocess
 import sys
 import tempfile
@@ -59,6 +61,42 @@ def wait_for_url(proc: subprocess.Popen[str], log: Path, timeout: float) -> str 
     return None
 
 
+def spawn_kwargs() -> dict[str, object]:
+    """Put the child in its own process group so we can kill what it spawns."""
+    if os.name == "nt":
+        return {"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP}
+    return {"start_new_session": True}
+
+
+def terminate_tree(proc: subprocess.Popen[str]) -> None:
+    """Kill the launcher *and* the marimo server it started.
+
+    Terminating only the launcher leaves marimo running: it holds the log file
+    open (fatal to a temp-dir cleanup on Windows) and keeps whatever locks it
+    inherited, which is how this stranded a CI runner's uv cache.
+    """
+    if proc.poll() is not None:
+        return
+    if os.name == "nt":
+        subprocess.run(  # noqa: S603
+            ["taskkill", "/PID", str(proc.pid), "/T", "/F"],  # noqa: S607
+            capture_output=True,
+            check=False,
+        )
+    else:
+        with contextlib.suppress(ProcessLookupError, PermissionError):
+            os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
+    try:
+        proc.wait(timeout=30)
+    except subprocess.TimeoutExpired:
+        if os.name != "nt":
+            with contextlib.suppress(ProcessLookupError, PermissionError):
+                os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+        proc.kill()
+        with contextlib.suppress(subprocess.TimeoutExpired):
+            proc.wait(timeout=10)
+
+
 def http_ok(url: str) -> bool:
     try:
         with urllib.request.urlopen(url, timeout=10) as response:  # noqa: S310 (localhost)
@@ -83,7 +121,9 @@ def main() -> int:
     exe = executable_in(args.bundle)
     print(f"launching {exe}")
 
-    with tempfile.TemporaryDirectory() as tmp:
+    # ignore_cleanup_errors: on Windows a lingering handle must not turn a
+    # successful smoke test into a failure.
+    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
         log_path = Path(tmp) / "bundle.log"
         log_path.touch()
         env = dict(
@@ -101,6 +141,7 @@ def main() -> int:
                 stderr=subprocess.STDOUT,
                 env=env,
                 text=True,
+                **spawn_kwargs(),  # type: ignore[arg-type]
             )
             try:
                 url = wait_for_url(proc, log_path, args.timeout)
@@ -112,11 +153,7 @@ def main() -> int:
                 print("OK: the bundled marimo server answered")
                 return 0
             finally:
-                proc.terminate()
-                try:
-                    proc.wait(timeout=30)
-                except subprocess.TimeoutExpired:
-                    proc.kill()
+                terminate_tree(proc)
 
 
 if __name__ == "__main__":
