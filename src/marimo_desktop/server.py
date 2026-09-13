@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import contextlib
+import os
+import shutil
 import socket
 import subprocess
 import sys
@@ -17,6 +19,35 @@ def find_free_port() -> int:
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
         sock.bind((HOST, 0))
         return sock.getsockname()[1]
+
+
+def bundled_uv() -> Path | None:
+    """The `uv` ux ships inside the bundle, next to the cached venv.
+
+    ux puts it there but never on PATH, and an app launched from Finder gets
+    a minimal PATH anyway.
+    """
+    name = "uv.exe" if sys.platform == "win32" else "uv"
+    candidate = Path(sys.prefix).parent / name
+    return candidate if candidate.is_file() else None
+
+
+def child_env() -> dict[str, str]:
+    """Environment for the marimo subprocess, with a usable package manager.
+
+    Without this, installing a package from a notebook fails in the packaged
+    app: marimo infers its package manager and, finding no `UV`, concludes
+    "pip" because it is running inside a venv — but a uv-built venv has no
+    pip, so the install dies. `UV` is the documented hook (marimo's
+    find_uv_bin is `os.environ.get("UV", "uv")`), and PATH covers the
+    `which("uv")` checks --sandbox makes.
+    """
+    env = dict(os.environ)
+    uv = bundled_uv() or shutil.which("uv")
+    if uv:
+        env["UV"] = str(uv)
+        env["PATH"] = os.pathsep.join([str(Path(uv).parent), env.get("PATH", "")])
+    return env
 
 
 class MarimoServer:
@@ -67,6 +98,7 @@ class MarimoServer:
             self._command(),
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
+            env=child_env(),
         )
 
     def poll(self) -> str:

@@ -7,6 +7,7 @@ cheap `python -c sleep` stand-in.
 
 from __future__ import annotations
 
+import os
 import socket
 import subprocess
 import sys
@@ -138,3 +139,58 @@ class _FakeProc:
 
     def poll(self) -> int | None:
         return None if self._alive else 1
+
+
+# -- package manager for the marimo child ---------------------------------
+
+
+def test_bundled_uv_found_next_to_the_venv(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """ux drops its uv beside the cached venv, never on PATH."""
+    uv = tmp_path / ("uv.exe" if sys.platform == "win32" else "uv")
+    uv.touch()
+    monkeypatch.setattr(sys, "prefix", str(tmp_path / ".venv"))
+
+    assert server_mod.bundled_uv() == uv
+
+
+def test_bundled_uv_absent_in_a_dev_checkout(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(sys, "prefix", str(tmp_path / ".venv"))
+
+    assert server_mod.bundled_uv() is None
+
+
+def test_child_env_points_marimo_at_the_bundled_uv(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Regression: without UV, marimo infers "pip" because it is inside a venv,
+    but a uv-built venv has no pip — so installing a package from a notebook
+    failed in the packaged app."""
+    uv = tmp_path / ("uv.exe" if sys.platform == "win32" else "uv")
+    uv.touch()
+    monkeypatch.setattr(sys, "prefix", str(tmp_path / ".venv"))
+
+    env = server_mod.child_env()
+
+    assert env["UV"] == str(uv)
+    assert env["PATH"].split(os.pathsep)[0] == str(tmp_path)
+
+
+def test_child_env_falls_back_to_uv_on_path(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(sys, "prefix", str(tmp_path / ".venv"))
+    monkeypatch.setattr(server_mod.shutil, "which", lambda _: "/somewhere/bin/uv")
+
+    assert server_mod.child_env()["UV"] == "/somewhere/bin/uv"
+
+
+def test_child_env_without_any_uv_is_left_alone(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(sys, "prefix", str(tmp_path / ".venv"))
+    monkeypatch.setattr(server_mod.shutil, "which", lambda _: None)
+    monkeypatch.delenv("UV", raising=False)
+
+    assert "UV" not in server_mod.child_env()
