@@ -294,7 +294,8 @@ def test_python_command_re_invokes_the_app_when_there_is_no_interpreter(
     stub = "/Applications/marimo desktop.app/Contents/MacOS/marimo desktop"
     monkeypatch.setattr(sys, "executable", stub)
 
-    assert server_mod.python_command() == [stub, server_mod.MARIMO_CLI_FLAG]
+    # str(Path(...)) — the separators are normalised, and Windows runs this too.
+    assert server_mod.python_command() == [str(Path(stub)), server_mod.MARIMO_CLI_FLAG]
 
 
 def test_command_is_built_on_top_of_python_command(
@@ -307,4 +308,4 @@ def test_command_is_built_on_top_of_python_command(
 
     cmd = srv._command()
 
-    assert cmd[:3] == [stub, server_mod.MARIMO_CLI_FLAG, "edit"]
+    assert cmd[:3] == [str(Path(stub)), server_mod.MARIMO_CLI_FLAG, "edit"]
