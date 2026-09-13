@@ -223,6 +223,43 @@ Windows Tk 8.6, macOS Tk 8.6** (CPython 3.12.14). Es decir, la ventana de
 control no es un problema fuera de macOS; lo que sigue sin probarse es el
 empaquetado en sí (`ux bundle --target …`), no la GUI.
 
+### Linux y Windows: el bundle funciona (sesión 5)
+
+Hasta aquí solo estaba verificado el `.app` de macOS, y solo a mano (doble
+clic del autor). Ahora el CI **construye el bundle en las tres plataformas y
+lo ejecuta de verdad** (`scripts/smoke_bundle.py`: lanza el artefacto en
+`--headless`, espera la línea de "listo", comprueba por HTTP que el servidor
+responde y lo mata). Resultado del primer intento completo:
+
+| Plataforma | Artefacto | Tamaño | Smoke |
+|---|---|---|---|
+| macOS | `marimo-desktop.app` (`--format app`) | ~18 MB | ✅ |
+| Linux | `marimo-desktop` (binario) | 24,1 MB | ✅ |
+| Windows | `marimo-desktop.exe` (binario) | 22,3 MB | ✅ |
+
+`--format app` es **solo macOS**; en Linux y Windows ux produce un binario
+suelto (sin icono ni nombre de Dock, claro). Los tres bootstrapean su
+intérprete en el primer arranque, igual que el `.app`.
+
+Dos fallos del primer intento, **ambos del arnés de prueba, no de la app**
+(Windows llegó a imprimir "the bundled marimo server answered" antes de
+fallar):
+
+- Matar solo al proceso lanzador dejaba **vivo el servidor marimo** que este
+  había arrancado. Ese huérfano mantenía abierto el fichero de log → en
+  Windows la limpieza del temporal revienta con `WinError 32`; y mantenía
+  bloqueado el caché de uv del runner → el job de macOS se quedaba 300 s
+  esperando el lock en `Post Install uv`. Comprobado en local: tras dos
+  pruebas previas quedaban dos `marimo edit` vivos.
+- Arreglado con `terminate_tree()` (grupo de procesos en POSIX,
+  `taskkill /T /F` en Windows) + `ignore_cleanup_errors=True` en el
+  temporal. El job de bundle además ya no usa el caché de uv, que no
+  necesitaba.
+
+Lo que sigue **sin** resolver para distribuir fuera de tu máquina: firma y
+notarización (macOS pedirá permiso o dirá "app dañada"), y que los binarios
+de Linux/Windows no tienen icono ni integración de escritorio.
+
 ### ux-py como empaquetador (con Briefcase de reserva)
 
 [`ux-py`](https://github.com/i2y/ux) (`ux bundle`) hace exactamente lo que el plan
@@ -301,8 +338,8 @@ intérprete empaquetado que fallaba (`tk.Tk()` pasó de excepción a `OK`).
 - [ ] `bundle_identifier` en minúsculas ya es correcto (reverse-DNS); revisar solo
   si cambia el usuario de GitHub
 - [ ] Workflow de release: instaladores firmados/notarizados publicados en cada tag
-- [ ] Construir y ejecutar de verdad los bundles de Linux y Windows (el CI solo
-  ejercita la parte Python)
+- [x] Construir y ejecutar de verdad los bundles de Linux y Windows (CI, con
+  smoke test del artefacto en las tres plataformas)
 
 ## Entorno / git
 

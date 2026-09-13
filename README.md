@@ -6,11 +6,16 @@ A self-contained desktop app for [marimo](https://github.com/marimo-team/marimo)
 it ships its own Python interpreter and marimo install, so there is nothing to
 `pip install` and no venv to manage. Double-click → marimo opens.
 
-Status: **v1, verified** — a small Tk control window (`Start/Stop`, folder
-picker + recent folders, clickable URL + copy button) plus a `--headless`
-mode. Both `uv run marimo-desktop` and the packaged `dist/marimo-desktop.app`
-work. No `pywebview` — the launcher is a native control panel and marimo
-itself opens in a real browser.
+Status: **v1, verified on macOS, Linux and Windows** — a small Tk control
+window (`Start/Stop`, folder picker + recent folders, clickable URL + copy
+button) plus a `--headless` mode. Every push builds the bundle on all three
+platforms and launches it to check marimo actually comes up. No `pywebview` —
+the launcher is a native control panel and marimo itself opens in a real
+browser.
+
+Not yet solved for distribution to other people: macOS code signing and
+notarisation (an unsigned download trips Gatekeeper), and the Linux/Windows
+builds are bare binaries — no icon, no desktop integration.
 
 Design decisions, packaging caveats and the roadmap are in [`NOTES.md`](NOTES.md).
 
@@ -99,6 +104,7 @@ Build:
 ux bundle --format app --output ./dist/            # -> dist/marimo-desktop.app  (verified working)
 ux bundle --format app --codesign --dmg --output ./dist/    # ad-hoc signed .dmg
 ux bundle --format app --codesign --notarize --dmg --output ./dist/   # Developer ID + Apple notary
+ux bundle --output ./dist/                         # plain binary (Linux/Windows; `--format app` is macOS-only)
 ux bundle --target linux-x86_64 --output ./dist/   # cross-compile a Linux binary
 ```
 
@@ -141,7 +147,8 @@ community); a `[tool.briefcase]` block is kept in `pyproject.toml` for that.
       clickable URL + copy button)
 - [x] App icon + Dock name polish (`assets/icon.png` → `.icns`)
 - [x] Test suite + ruff, run on CI across macOS / Linux / Windows
+- [x] Linux and Windows bundles built and launched in CI (macOS `.app` ~18 MB,
+      Linux binary 24 MB, Windows `.exe` 22 MB)
 - [ ] File association for `.py` marimo notebooks
 - [ ] Release workflow: signed/notarised installers published on tag
-- [ ] Actually build and run the Linux/Windows bundles (CI only exercises the
-      Python side so far)
+- [ ] Icon / desktop integration for the Linux and Windows builds
