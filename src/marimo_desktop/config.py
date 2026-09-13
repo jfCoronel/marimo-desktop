@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import json
 from pathlib import Path
 from typing import Any
@@ -19,10 +20,8 @@ def load() -> dict[str, Any]:
 
 
 def save(data: dict[str, Any]) -> None:
-    try:
+    with contextlib.suppress(OSError):
         _PATH.write_text(json.dumps(data, indent=2), encoding="utf-8")
-    except OSError:
-        pass
 
 
 def get(key: str, default: Any = None) -> Any:

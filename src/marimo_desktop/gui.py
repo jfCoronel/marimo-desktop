@@ -43,10 +43,7 @@ def _footer_text() -> str:
         marimo_version = version("marimo")
     except PackageNotFoundError:
         marimo_version = "?"
-    versions = (
-        f"Python {platform.python_version()} · uv {_uv_version()} · "
-        f"marimo {marimo_version}"
-    )
+    versions = f"Python {platform.python_version()} · uv {_uv_version()} · marimo {marimo_version}"
     return f"{versions}\n© {_COPYRIGHT_YEAR} jfCoronel"
 
 
@@ -87,6 +84,13 @@ import tkinter as tk  # noqa: E402 — must follow the library-path fix above
 from tkinter import filedialog, ttk  # noqa: E402
 
 
+def _add_recent(path: Path) -> None:
+    """Push `path` to the front of the recent-folders list, keeping it unique."""
+    recents = [p for p in config.get("recent_folders", []) if p != str(path)]
+    recents.insert(0, str(path))
+    config.set("recent_folders", recents[:_MAX_RECENTS])
+
+
 def _shorten(path: Path, parts: int = 3) -> str:
     bits = path.parts
     return str(path) if len(bits) <= parts else ".../" + "/".join(bits[-parts:])
@@ -95,12 +99,10 @@ def _shorten(path: Path, parts: int = 3) -> str:
 class App:
     def __init__(self) -> None:
         saved = config.get("notebooks_dir")
-        self.folder: Path = (
-            ensure_notebooks_dir(Path(saved)) if saved else default_notebooks_dir()
-        )
+        self.folder: Path = ensure_notebooks_dir(Path(saved)) if saved else default_notebooks_dir()
         self.server: MarimoServer | None = None
         self._elapsed = 0.0
-        self._add_recent(self.folder)
+        _add_recent(self.folder)
 
         self.root = tk.Tk()
         self.root.title("marimo desktop")
@@ -122,7 +124,9 @@ class App:
         self.change_btn = ttk.Button(folder_row, text="Change…", command=self._choose_folder)
         self.change_btn.grid(row=0, column=2, sticky="e")
         self.recent_btn = ttk.Menubutton(folder_row, text="Recent ▾")
-        self.recent_menu = tk.Menu(self.recent_btn, tearoff=False, postcommand=self._build_recent_menu)
+        self.recent_menu = tk.Menu(
+            self.recent_btn, tearoff=False, postcommand=self._build_recent_menu
+        )
         self.recent_btn.config(menu=self.recent_menu)
         self.recent_btn.grid(row=0, column=3, sticky="e", padx=(6, 0))
         folder_row.columnconfigure(1, weight=1)
@@ -194,12 +198,7 @@ class App:
         self.folder = ensure_notebooks_dir(path)
         self.folder_var.set(_shorten(self.folder))
         config.set("notebooks_dir", str(self.folder))
-        self._add_recent(self.folder)
-
-    def _add_recent(self, path: Path) -> None:
-        recents = [p for p in config.get("recent_folders", []) if p != str(path)]
-        recents.insert(0, str(path))
-        config.set("recent_folders", recents[:_MAX_RECENTS])
+        _add_recent(self.folder)
 
     def _build_recent_menu(self) -> None:
         self.recent_menu.delete(0, "end")
@@ -257,9 +256,7 @@ class App:
         if state == "ready":
             self.url_var.set(self.server.url)
             self._server_controls_enabled(enabled=True)
-            self.status_var.set(
-                f"marimo ready in {self._elapsed:.1f}s. Click the link to open it."
-            )
+            self.status_var.set(f"marimo ready in {self._elapsed:.1f}s. Click the link to open it.")
             return
         if state == "exited":
             self.status_var.set("marimo exited before it was ready.")

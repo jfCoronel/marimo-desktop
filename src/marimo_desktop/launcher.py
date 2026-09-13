@@ -58,12 +58,34 @@ def _run_headless(*, notebook: str | None, mode: str, browser: bool) -> int:
     return 0
 
 
+# macOS hands a bundled app arguments of its own. `-psn_<n>` stands alone;
+# the NS*/AppleLanguages ones come as `-flag value` pairs, so dropping only the
+# flag leaves its value behind to be mistaken for the notebook positional.
+_MACOS_FLAGS_WITH_VALUE = ("-NS", "-AppleLanguages")
+
+
+def _strip_macos_args(argv: list[str]) -> list[str]:
+    kept: list[str] = []
+    drop_value = False
+    for arg in argv:
+        if drop_value:
+            drop_value = False
+            if not arg.startswith("-"):
+                continue  # it was the flag's value; another flag isn't
+        if arg.startswith("-psn_"):
+            continue
+        if arg.startswith(_MACOS_FLAGS_WITH_VALUE):
+            drop_value = "=" not in arg
+            continue
+        kept.append(arg)
+    return kept
+
+
 def main(argv: list[str] | None = None) -> int:
-    # macOS can hand a bundled app process-serial-number / NS* args — ignore them.
     raw = list(sys.argv[1:] if argv is None else argv)
     if os.environ.get("MARIMO_DESKTOP_DEBUG"):
         (paths_config_dir() / "argv.log").write_text(repr(sys.argv), encoding="utf-8")
-    raw = [a for a in raw if not a.startswith(("-psn_", "-NS", "-AppleLanguages"))]
+    raw = _strip_macos_args(raw)
 
     parser = argparse.ArgumentParser(prog="marimo-desktop")
     parser.add_argument("notebook", nargs="?", help="Notebook file to open (implies --headless).")

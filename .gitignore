@@ -6,6 +6,10 @@ __pycache__/
 dist/
 build/
 
+# pytest / ruff
+.pytest_cache/
+.ruff_cache/
+
 # uv
 # (uv.lock IS committed)
 

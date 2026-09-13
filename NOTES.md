@@ -3,7 +3,7 @@
 Notas de diseño y decisiones que no se deducen del código. El *cómo* está en
 [`README.md`](README.md); esto es el *por qué* y el estado.
 
-Última actualización: 2026-09-11 (sesión 4).
+Última actualización: 2026-09-13 (sesión 5).
 
 ---
 
@@ -156,6 +156,55 @@ uso y `© 2026 jfCoronel`. Detalles no obvios:
   completo (bastante pesado) solo para leer un string, así que no añade
   nada perceptible al arranque de la ventana.
 
+### Tests, lint y CI (sesión 5)
+
+Hasta aquí el proyecto no tenía ni una sola prueba ni configuración de lint,
+pese a que el código ya llevaba `# noqa: E402/BLE001/S603/S310/A001/FBT003`
+—códigos de ruff que no validaba nadie. Se añadió:
+
+- **`tests/`** (~60 pruebas, `pytest`). Cubren todo menos los widgets Tk:
+  construcción del comando de marimo y parada del subproceso, resolución de
+  la carpeta de notebooks + sembrado de ejemplos, el fichero de prefs, el
+  manejo de `argv`, el arreglo de `TCL_LIBRARY`/`TK_LIBRARY` y una serie de
+  invariantes del propio `pyproject.toml`.
+  - **Nada de servidor marimo real** en la suite: sería lenta y dependiente de
+    red/puertos. Las tres cosas que sí necesitan un proceso de verdad
+    (`stop()` mata al hijo) usan un `python -c "time.sleep(30)"` como cebo.
+  - `conftest.py` redirige `config._PATH` y borra `MARIMO_DESKTOP_NOTEBOOKS`
+    en **todas** las pruebas: la suite nunca debe escribir en el config real
+    ni en `~/marimo notebooks`.
+  - `tests/test_packaging.py` guarda las dos formas en que este repo ya se
+    había desincronizado: la versión (estaba `0.1.0` en `__init__.py` y
+    `0.2.0` en `pyproject.toml` — arreglado) y los metadatos de empaquetado
+    que producen un bundle silenciosamente roto (`include` sin `"src/"`).
+
+- **ruff** (`[tool.ruff]` en `pyproject.toml`), `line-length = 100`, con `BLE`
+  y `FBT` en el `select` precisamente para que los `noqa` que ya había
+  signifiquen algo. `notebooks/` queda **excluido**: una celda de marimo acaba
+  en una expresión suelta a propósito (es su salida) y `B018` la marca siempre
+  — no es estilo nuestro que corregir. También se adoptó `ruff format` (el
+  diff sobre el código existente era de 3 ficheros, trivial).
+
+- **`.github/workflows/ci.yml`**: matriz macOS/Linux/Windows × Python
+  3.12/3.13 con lint + format + tests, más un job que construye wheel y sdist.
+  Es la **primera vez que Linux y Windows tocan este código**; ojo, solo se
+  ejercita la parte Python (las ramas por plataforma de `paths.py`), no los
+  bundles — construirlos y ejecutarlos de verdad sigue pendiente.
+  Hay un paso suelto `import tkinter` antes de `pytest` para que, si un runner
+  no trae Tk, el fallo se lea como lo que es y no como un error opaco de
+  recolección.
+
+**Bug real encontrado por las pruebas** (`launcher.main`): el filtro de
+argumentos que macOS le pasa a una app empaquetada quitaba los *flags*
+`-NS…`/`-AppleLanguages` pero **no su valor**, así que `(en)` sobrevivía y
+argparse lo tomaba como el notebook posicional → la app arrancaba en modo
+headless con una ruta fantasma en vez de abrir la ventana. Sustituido por
+`_strip_macos_args()`, que descarta el flag y su valor (y no se come el
+siguiente argumento si este empieza por `-`, es decir, si es otro flag).
+
+De paso, `_add_recent` pasó de método de `App` a función de módulo: no usaba
+`self` para nada y así se puede probar sin abrir una ventana.
+
 ### ux-py como empaquetador (con Briefcase de reserva)
 
 [`ux-py`](https://github.com/i2y/ux) (`ux bundle`) hace exactamente lo que el plan
@@ -222,10 +271,20 @@ intérprete empaquetado que fallaba (`tk.Tk()` pasó de excepción a `OK`).
       (`CFBundleName` ya estaba bien) — solo visible en el `.app` empaquetado,
       no con `uv run` (ver nota de diseño abajo)
 - [x] Bug de Tcl/Tk en el `.app` empaquetado arreglado (ver nota arriba)
-- [ ] Asociación de archivos para `.py` de marimo
+- [x] Suite de tests + ruff + CI (macOS / Linux / Windows × Python 3.12/3.13)
+- [ ] Asociación de archivos para `.py` de marimo. Coste real medido en sesión 5:
+  `ux bundle 0.1.6` **no tiene opción para añadir claves al `Info.plist`** (el
+  generado tiene 6 claves, sin `CFBundleDocumentTypes`), así que hace falta un
+  script de post-proceso tras cada build; y en macOS el doble clic sobre un
+  documento **no llega por `argv`** sino como Apple Event → habría que
+  engancharlo con `root.createcommand("::tk::mac::OpenDocument", …)`. Decisión
+  de diseño pendiente: reclamar `.py` a nivel de sistema le roba el doble clic
+  al editor del usuario; probablemente `LSHandlerRank = Alternate`.
 - [ ] `bundle_identifier` en minúsculas ya es correcto (reverse-DNS); revisar solo
   si cambia el usuario de GitHub
-- [ ] CI (macOS / Windows / Linux) que produzca instaladores en cada tag
+- [ ] Workflow de release: instaladores firmados/notarizados publicados en cada tag
+- [ ] Construir y ejecutar de verdad los bundles de Linux y Windows (el CI solo
+  ejercita la parte Python)
 
 ## Entorno / git
 

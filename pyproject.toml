@@ -16,8 +16,38 @@ dependencies = [
 [project.scripts]
 marimo-desktop = "marimo_desktop.launcher:main"
 
+[dependency-groups]
+# Dev-only: never shipped in the bundle (ux installs [project.dependencies]).
+dev = [
+    "pytest>=8.0",
+    "ruff>=0.14",
+]
+
 # Packaging tools are NOT project dependencies (they'd bloat the shipped app).
 # Install ux once, globally:  uv tool install ux-py
+
+# ---------------------------------------------------------------------------
+# Lint / test
+# ---------------------------------------------------------------------------
+[tool.ruff]
+line-length = 100
+src = ["src", "tests"]
+# marimo cells end in a bare expression on purpose (that's the cell's output),
+# which every "useless expression" rule flags. Not our code style to police.
+exclude = ["notebooks"]
+
+[tool.ruff.lint]
+select = [
+    "E", "W", "F", "I", "N", "UP", "B", "A", "BLE", "C4", "S", "FBT", "SIM", "PTH", "ARG", "RUF",
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Tests: asserts are the point; private access and subprocesses are deliberate.
+"tests/*" = ["S101", "S603"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
 
 [build-system]
 # Upper bound kept wide: ux ships its own newer uv to build the bundle.

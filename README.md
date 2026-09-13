@@ -1,5 +1,7 @@
 # marimo-desktop
 
+[![CI](https://github.com/jfCoronel/marimo-desktop/actions/workflows/ci.yml/badge.svg)](https://github.com/jfCoronel/marimo-desktop/actions/workflows/ci.yml)
+
 A self-contained desktop app for [marimo](https://github.com/marimo-team/marimo):
 it ships its own Python interpreter and marimo install, so there is nothing to
 `pip install` and no venv to manage. Double-click → marimo opens.
@@ -59,6 +61,26 @@ uv run marimo-desktop --headless notebooks/welcome.py
 uv run marimo-desktop --headless --run notebooks/welcome.py   # app mode
 ```
 
+Tests and lint (`pytest` + `ruff`, in the `dev` dependency group):
+
+```sh
+uv sync --group dev
+uv run pytest          # ~60 tests, no marimo server is started
+uv run ruff check .
+uv run ruff format .
+```
+
+The suite covers everything except the Tk widgets themselves: server command
+construction and teardown, notebook-folder resolution and sample seeding, the
+prefs file, argv handling (including the `-psn_`/`-NS` noise macOS hands a
+bundled app), the Tcl/Tk library-path fix, and pyproject invariants that have
+already drifted once (version in three places, `include = ["src/"]`). Nothing
+touches the real `~/marimo notebooks` or the user config — `conftest.py`
+redirects both.
+
+[CI](.github/workflows/ci.yml) runs the same three commands on macOS, Linux and
+Windows × Python 3.12/3.13, plus a wheel/sdist build.
+
 ## Package (ux-py)
 
 Packaging uses [`ux-py`](https://github.com/i2y/ux), configured in `pyproject.toml`
@@ -105,5 +127,8 @@ community); a `[tool.briefcase]` block is kept in `pyproject.toml` for that.
 - [x] Tk control window (Start/Stop, folder picker + recent folders,
       clickable URL + copy button)
 - [x] App icon + Dock name polish (`assets/icon.png` → `.icns`)
+- [x] Test suite + ruff, run on CI across macOS / Linux / Windows
 - [ ] File association for `.py` marimo notebooks
-- [ ] CI matrix (macOS / Windows / Linux) producing installers on tag
+- [ ] Release workflow: signed/notarised installers published on tag
+- [ ] Actually build and run the Linux/Windows bundles (CI only exercises the
+      Python side so far)
