@@ -271,10 +271,38 @@ apertura. Consecuencias comprobadas, no supuestas:
   ese es el camino. El `.app` queda con firma ad-hoc (la que ux pone siempre).
 - `spctl -a -vvv -t exec dist/marimo-desktop.app` → rechazado. Y en macOS 15+
   (aquí 26.6.2) Apple **eliminó el atajo de clic derecho → Abrir** para apps
-  no notarizadas: la ruta real es Ajustes del Sistema → Privacidad y
-  seguridad → *Abrir igualmente*, o `xattr -dr com.apple.quarantine`. Las
-  notas de la release lo explican paso a paso; si no, la descarga es
-  inservible para la mayoría.
+  no notarizadas.
+
+**Corregido tras probar la release real (el usuario instaló el `.dmg`
+publicado)**: el mensaje que sale **no** es "no se ha podido verificar" sino
+**"está dañado"**, y esa variante **no ofrece ninguna salida por interfaz** —
+no aparece nada en Privacidad y seguridad. Las notas de la 0.3.0 decían
+"Abrir igualmente" y mandaban al usuario a buscar un botón inexistente;
+reescritas.
+
+Causa: la firma que deja ux es **inválida**, no solo "sin notarizar":
+
+```
+codesign --verify dist/marimo-desktop.app
+  → code has no resources but signature indicates they must be present
+codesign -dvvv → flags=0x20002(adhoc,linker-signed), Sealed Resources=none
+```
+
+Y **no se puede re-firmar**: `codesign --force --deep --sign -` falla con
+`main executable failed strict validation`, igual que firmando solo el
+binario interno. Motivo: ux construye un ejecutable autoextraíble
+**añadiendo el payload al final del Mach-O**, lo que rompe la estructura que
+`codesign` exige. No es un flag mal puesto: con ux 0.1.6 (y es la última
+versión en PyPI, comprobado) **no hay firma válida posible** para el `.app`.
+
+Único remedio actual para el usuario: `xattr -dr com.apple.quarantine
+/Applications/marimo-desktop.app`. Para quitar ese paso hace falta o bien la
+cuenta de Apple (que no arregla esto por sí sola: una firma inválida sigue
+siendo inválida), o bien **cambiar de empaquetador en macOS** — es
+exactamente el escenario para el que `[tool.briefcase]` lleva ahí desde el
+principio. Briefcase genera un `.app` con estructura estándar, firmable
+ad-hoc de verdad (`--adhoc-sign`), lo que degradaría el problema a la ruta
+normal de "app sin verificar" con su botón de *Abrir igualmente*.
 
 Empaquetado por plataforma (`--format app` es solo macOS, así que Linux y
 Windows reciben un binario pelado y hay que vestirlo):

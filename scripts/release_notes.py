@@ -34,26 +34,31 @@ download goes to `~/Library/Caches/ux/` (macOS), `%LOCALAPPDATA%\\ux\\`
 ## These builds are not signed
 
 This is a hobby project without an Apple Developer account ($99/year) or a
-Windows code-signing certificate, so both systems will warn you that the
-publisher is unverified. The steps below are the standard way to run
-unsigned software, not a workaround for anything broken — but only run
-software you got from a source you trust, this one included.
+Windows code-signing certificate, so both systems will refuse the download
+until you tell them otherwise. Only run software from a source you trust —
+this one included.
 
 ### macOS
 
-1. Open the `.dmg` and drag **marimo-desktop** to Applications.
-2. Launch it. macOS refuses: *"Apple could not verify ... is free of malware."*
-   Click **Done**.
-3. Open **System Settings → Privacy & Security**, scroll to the bottom, and
-   click **Open Anyway** next to the message about marimo-desktop.
+macOS will say **"marimo-desktop is damaged and can't be opened"**. It is not
+damaged: the packaging tool leaves the app with a signature macOS considers
+invalid, and for that particular verdict there is no override anywhere in
+System Settings. Don't go looking in Privacy & Security — nothing about
+marimo-desktop appears there.
 
-On macOS 15 and later the old Control-click → Open shortcut no longer works
-for unsigned apps; Privacy & Security is the way. From a terminal, this does
-the same thing in one step:
+Clearing the download flag fixes it. After dragging the app to Applications,
+run this once in Terminal:
 
 ```sh
 xattr -dr com.apple.quarantine /Applications/marimo-desktop.app
 ```
+
+Then open it normally. You only ever do this once, and you can check what the
+command does first: it removes the "downloaded from the internet" attribute
+that makes macOS refuse the app.
+
+Sorry for the Terminal detour — a proper fix needs either a paid Apple
+Developer account or a different packaging tool, and both are on the list.
 
 ### Windows
 

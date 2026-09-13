@@ -147,10 +147,16 @@ def test_notes_name_every_published_artifact(notes: str) -> None:
 
 def test_notes_explain_how_to_open_an_unsigned_build(notes: str) -> None:
     """Without this the download is simply unusable for most people."""
-    assert "Privacy & Security" in notes
-    assert "Open Anyway" in notes
     assert "com.apple.quarantine" in notes
     assert "Run anyway" in notes  # Windows SmartScreen
+
+
+def test_notes_describe_the_message_macos_actually_shows(notes: str) -> None:
+    """ux leaves an unverifiable signature, so macOS says "damaged" — and gives
+    no override button. Telling people to look for "Open Anyway" sends them
+    hunting through Settings for something that isn't there."""
+    assert "damaged" in notes
+    assert "Open Anyway" not in notes
 
 
 def test_notes_warn_about_the_first_launch_download(notes: str) -> None:
