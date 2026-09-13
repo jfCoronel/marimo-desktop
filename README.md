@@ -79,7 +79,8 @@ touches the real `~/marimo notebooks` or the user config — `conftest.py`
 redirects both.
 
 [CI](.github/workflows/ci.yml) runs the same three commands on macOS, Linux and
-Windows × Python 3.12/3.13, plus a wheel/sdist build.
+Windows × Python 3.12/3.13, plus a wheel/sdist build and a per-platform bundle
+build that is launched for real (see `scripts/smoke_bundle.py` below).
 
 ## Package (ux-py)
 
@@ -102,6 +103,18 @@ ux bundle --target linux-x86_64 --output ./dist/   # cross-compile a Linux binar
 ```
 
 Then `open dist/marimo-desktop.app`.
+
+Verify a build actually runs (launches it, waits for the marimo server to
+answer, shuts it down) — works on any of the three platforms:
+
+```sh
+python scripts/smoke_bundle.py dist/marimo-desktop.app     # macOS
+python scripts/smoke_bundle.py dist/marimo-desktop         # Linux
+python scripts/smoke_bundle.py dist/marimo-desktop.exe     # Windows
+```
+
+CI runs exactly that on macOS, Linux and Windows and keeps the bundles as
+downloadable artifacts for 14 days.
 
 ### Known behaviour / caveats (ux-py 0.1.6 — pre-1.0, one maintainer)
 

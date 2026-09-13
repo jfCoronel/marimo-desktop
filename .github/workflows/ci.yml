@@ -78,3 +78,58 @@ jobs:
         with:
           name: dist
           path: dist/*
+
+  bundle:
+    name: bundle (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, ubuntu-latest, windows-latest]
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      - name: Install ux
+        run: uv tool install ux-py
+
+      # macOS gets the .app (icon, Dock name, double-clickable); everywhere else
+      # ux produces a plain binary — `--format app` is macOS-only.
+      - name: Build bundle (macOS .app)
+        if: runner.os == 'macOS'
+        run: ux bundle --format app --output ./dist/
+
+      - name: Build bundle (binary)
+        if: runner.os != 'macOS'
+        run: ux bundle --output ./dist/
+
+      # The tests prove the code works; this proves the *artifact* does — it
+      # launches, bootstraps its own interpreter, and gets marimo answering.
+      # First run downloads the interpreter and wheels, hence the long timeout.
+      - name: Smoke test the bundle (macOS)
+        if: runner.os == 'macOS'
+        run: uv run --no-project python scripts/smoke_bundle.py dist/marimo-desktop.app
+
+      - name: Smoke test the bundle (Linux)
+        if: runner.os == 'Linux'
+        run: uv run --no-project python scripts/smoke_bundle.py dist/marimo-desktop
+
+      - name: Smoke test the bundle (Windows)
+        if: runner.os == 'Windows'
+        run: uv run --no-project python scripts/smoke_bundle.py dist/marimo-desktop.exe
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bundle-${{ matrix.os }}
+          path: |
+            dist/marimo-desktop.app
+            dist/marimo-desktop
+            dist/marimo-desktop.exe
+          if-no-files-found: error
+          retention-days: 14
