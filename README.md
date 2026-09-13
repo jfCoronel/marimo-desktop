@@ -15,9 +15,9 @@ browser.
 
 Downloads for all three platforms are on the
 [releases page](https://github.com/jfCoronel/marimo-desktop/releases). They
-are **unsigned** — no Apple Developer account, no Windows certificate — so
-macOS and Windows will both warn you; the release notes spell out the
-standard steps to open them anyway.
+are not notarised (no paid Apple Developer account) or Windows-signed, so
+both systems warn on first launch; the release notes give the standard steps
+to open them anyway.
 
 Design decisions, packaging caveats and the roadmap are in [`NOTES.md`](NOTES.md).
 
@@ -111,11 +111,16 @@ uv tool install ux-py
 Build:
 
 ```sh
-ux bundle --format app --output ./dist/            # -> dist/marimo-desktop.app  (verified working)
-ux bundle --format app --codesign --dmg --output ./dist/    # ad-hoc signed .dmg
-ux bundle --format app --codesign --notarize --dmg --output ./dist/   # Developer ID + Apple notary
-ux bundle --output ./dist/                         # plain binary (Linux/Windows; `--format app` is macOS-only)
+ux bundle --output ./dist/                         # plain binary (Linux/Windows)
 ux bundle --target linux-x86_64 --output ./dist/   # cross-compile a Linux binary
+```
+
+macOS is built with Briefcase instead (see below):
+
+```sh
+uv tool install --python 3.13 briefcase   # must satisfy requires-python (<3.14)
+briefcase create macOS && briefcase build macOS
+briefcase package macOS --adhoc-sign      # -> dist/marimo desktop-<version>.dmg
 ```
 
 Then `open dist/marimo-desktop.app`.
@@ -170,15 +175,23 @@ What each platform gets:
 
 | Platform | Artifact | Built with |
 |---|---|---|
-| macOS (arm64 + Intel) | `.dmg`, drag to Applications | `ux bundle --format app --dmg` |
-| Windows x64 | per-user installer `.exe` | [Inno Setup](packaging/windows/installer.iss) |
-| Linux x86_64 | `.tar.gz` + `install.sh` | [`scripts/package_linux.py`](scripts/package_linux.py) |
+| macOS 11+, universal | `.dmg`, drag to Applications | **Briefcase** (`--adhoc-sign`) |
+| Windows x64 | per-user installer `.exe` | ux + [Inno Setup](packaging/windows/installer.iss) |
+| Linux x86_64 | `.tar.gz` + `install.sh` | ux + [`scripts/package_linux.py`](scripts/package_linux.py) |
 
-`--format app` is macOS-only, so on Linux and Windows ux emits a bare
-executable and the desktop integration (icon, menu entry, uninstaller) is
-added by the packaging step. Signing is skipped: `ux --codesign` needs an
-Apple Developer ID, and `--dmg` works fine without it — the bundle stays
-ad-hoc signed. Install instructions for unsigned builds live in
+**Two packagers, on purpose.** ux is small and quick, but the executable it
+produces has its payload appended to the Mach-O, which leaves a signature
+macOS rejects outright — the app reports itself as *damaged*, with no override
+anywhere in System Settings, and it cannot be re-signed (`codesign` fails with
+"main executable failed strict validation"). Briefcase produces a normally
+structured bundle whose ad-hoc signature validates, which downgrades the
+problem to the ordinary "unidentified developer" prompt, and it builds
+universal — so Intel Macs are covered too. The trade is size (~100 MB download
+vs ~18 MB) and no first-run bootstrap on macOS.
+
+On Linux and Windows ux stays: `--format app` is macOS-only there anyway, so
+the desktop integration (icon, menu entry, uninstaller) is added by the
+packaging step. Install instructions live in
 [`scripts/release_notes.py`](scripts/release_notes.py), which generates the
 release body.
 
@@ -193,8 +206,10 @@ release body.
 - [x] Icon / desktop integration for Linux (.desktop + installer) and Windows
       (Inno Setup installer)
 - [x] Tagged releases publishing installers for all three platforms
-- [ ] Signing + notarisation (needs a paid Apple Developer account; until then
-      downloads need the manual "open anyway" step)
+- [x] macOS builds that Gatekeeper accepts as validly signed (switched to
+      Briefcase; universal, so Intel Macs are covered)
+- [ ] Notarisation (needs a paid Apple Developer account; until then the
+      first launch needs the manual "Open Anyway" step)
 - ~~File association for `.py`~~ — dropped: a marimo notebook is an ordinary
   `.py`, so there is no extension to claim without fighting every editor on
   the machine, and `marimo edit` simply exits on a non-notebook `.py` with no

@@ -11,6 +11,10 @@ authors = [
 requires-python = ">=3.12,<3.14"
 dependencies = [
     "marimo>=0.24.0",
+    # Ships the uv binary inside the app. marimo needs a package manager to
+    # install anything from a notebook, and --sandbox needs uv specifically;
+    # neither pip nor a system uv can be assumed inside a bundle.
+    "uv>=0.9",
 ]
 
 [project.scripts]
@@ -80,7 +84,6 @@ project_name = "marimo desktop"
 bundle = "io.github.jfcoronel"
 version = "0.3.1"
 url = "https://github.com/jfCoronel/marimo-desktop"
-license.file = "LICENSE"
 author = "jfCoronel"
 author_email = "jfcoroneltoro@gmail.com"
 
@@ -92,13 +95,11 @@ long_description = """A desktop wrapper around the marimo reactive notebook.
 It ships its own Python interpreter and marimo install, starts the marimo
 server locally and opens it — so end users never touch pip, uv or a venv.
 """
-sources = ["src/marimo_desktop"]
+sources = ["src/marimo_desktop", "notebooks"]
 icon = "assets/icon"            # briefcase looks for assets/icon.png
-# Notebooks shipped inside the app as read-only samples; the running app writes
-# to ~/"marimo notebooks" (see launcher.notebooks_dir).
-resources = ["notebooks"]
 requires = [
     "marimo>=0.24.0",
+    "uv>=0.9",
 ]
 
 [tool.briefcase.app.marimo-desktop.macOS]

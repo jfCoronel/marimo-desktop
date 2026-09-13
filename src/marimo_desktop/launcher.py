@@ -12,13 +12,28 @@ import os
 import signal
 import sys
 import time
+from pathlib import Path
 
 from marimo_desktop.browsers import open_url
 from marimo_desktop.paths import config_dir as paths_config_dir
 from marimo_desktop.paths import default_notebooks_dir
-from marimo_desktop.server import MarimoServer
+from marimo_desktop.server import MARIMO_CLI_FLAG, MarimoServer
 
 _STARTUP_TIMEOUT_S = 40.0
+
+
+def _publish_url(url: str) -> None:
+    """Write the URL where a test harness can read it.
+
+    Printing is not enough everywhere: a Briefcase app runs under a stub that
+    does not forward stdout, so the smoke test has no other way to learn which
+    port marimo picked. No-op unless the variable is set.
+    """
+    target = os.environ.get("MARIMO_DESKTOP_URL_FILE")
+    if not target:
+        return
+    with contextlib.suppress(OSError):
+        Path(target).write_text(url, encoding="utf-8")
 
 
 def _run_headless(*, notebook: str | None, mode: str, browser: bool) -> int:
@@ -38,6 +53,7 @@ def _run_headless(*, notebook: str | None, mode: str, browser: bool) -> int:
         state = server.poll()
         if state == "ready":
             print(f"marimo is running at {server.url}")
+            _publish_url(server.url)
             if browser:
                 open_url(server.url)
             break
@@ -81,8 +97,22 @@ def _strip_macos_args(argv: list[str]) -> list[str]:
     return kept
 
 
+def _exec_marimo_cli(args: list[str]) -> int:
+    """Run marimo's own CLI in this process.
+
+    Only reached when the app re-invokes itself because there is no Python
+    executable to spawn (see server.python_command).
+    """
+    from marimo._cli.cli import main as marimo_main
+
+    marimo_main(args=args, prog_name="marimo", standalone_mode=False)
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     raw = list(sys.argv[1:] if argv is None else argv)
+    if raw and raw[0] == MARIMO_CLI_FLAG:
+        return _exec_marimo_cli(raw[1:])
     if os.environ.get("MARIMO_DESKTOP_DEBUG"):
         (paths_config_dir() / "argv.log").write_text(repr(sys.argv), encoding="utf-8")
     raw = _strip_macos_args(raw)

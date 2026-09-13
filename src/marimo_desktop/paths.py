@@ -8,9 +8,25 @@ import shutil
 import sys
 from pathlib import Path
 
-# <repo|bundle root>/notebooks — sample notebooks shipped alongside the package
-# (declared in [tool.ux].include). Exists in both the source tree and the bundle.
-SAMPLES_DIR = Path(__file__).resolve().parents[2] / "notebooks"
+
+def _find_samples_dir() -> Path:
+    """Locate the shipped sample notebooks.
+
+    The packagers disagree about the layout: a dev checkout and an ux bundle
+    put ``notebooks/`` two levels above this file, Briefcase puts it one level
+    above (``Contents/Resources/app/notebooks``). Look for it rather than
+    hard-coding one of them; falling back to the old guess keeps
+    ``_seed_samples`` a no-op when there is nothing to seed.
+    """
+    here = Path(__file__).resolve()
+    for parent in (here.parents[1], here.parents[2]):
+        candidate = parent / "notebooks"
+        if candidate.is_dir():
+            return candidate
+    return here.parents[2] / "notebooks"
+
+
+SAMPLES_DIR = _find_samples_dir()
 
 
 def running_from_source() -> bool:

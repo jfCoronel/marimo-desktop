@@ -138,7 +138,7 @@ def notes() -> str:
 
 def test_notes_name_every_published_artifact(notes: str) -> None:
     for suffix in (
-        "macos-arm64.dmg",
+        "macos-universal.dmg",
         "windows-x64-setup.exe",
         "linux-x86_64.tar.gz",
     ):
@@ -152,18 +152,20 @@ def test_notes_explain_how_to_open_an_unsigned_build(notes: str) -> None:
 
 
 def test_notes_describe_the_message_macos_actually_shows(notes: str) -> None:
-    """ux leaves an unverifiable signature, so macOS says "damaged" — and gives
-    no override button. Telling people to look for "Open Anyway" sends them
-    hunting through Settings for something that isn't there."""
-    assert "damaged" in notes
-    assert "Open Anyway" not in notes
+    """The macOS build is signed (validly, ad-hoc) but not notarised, so the
+    ordinary override applies again. Promising "damaged" would be as wrong now
+    as promising "Open Anyway" was while ux built it."""
+    assert "Open Anyway" in notes
+    assert "Privacy & Security" in notes
+    assert "damaged" not in notes
 
 
 def test_notes_warn_about_the_first_launch_download(notes: str) -> None:
+    """Windows and Linux bootstrap on first run; macOS carries everything."""
     assert "200 MB" in notes
 
 
-def test_notes_do_not_promise_an_intel_build(notes: str) -> None:
-    """Nothing in the release builds an x86_64 Mac binary — don't imply one."""
-    assert "macos-x86_64" not in notes
-    assert "Intel Mac" in notes
+def test_notes_cover_intel_macs(notes: str) -> None:
+    """Briefcase builds universal, so Intel is no longer left out."""
+    assert "Intel" in notes
+    assert "macos-arm64" not in notes

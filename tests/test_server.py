@@ -158,16 +158,41 @@ class _FakeProc:
 # -- package manager for the marimo child ---------------------------------
 
 
-def test_bundled_uv_found_next_to_the_venv(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+@pytest.fixture
+def _no_packaged_uv(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Pretend the `uv` wheel isn't installed, to reach the other lookups."""
+    import uv
+
+    monkeypatch.setattr(uv, "find_uv_bin", lambda: "/nonexistent/uv")
+
+
+def test_bundled_uv_prefers_the_packaged_binary(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The `uv` wheel carries the binary; that's what Briefcase installs."""
+    import uv
+
+    packaged = tmp_path / "packaged-uv"
+    packaged.touch()
+    monkeypatch.setattr(uv, "find_uv_bin", lambda: str(packaged))
+
+    assert server_mod.bundled_uv() == packaged
+
+
+@pytest.mark.usefixtures("_no_packaged_uv")
+def test_bundled_uv_falls_back_to_the_one_beside_the_venv(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """ux drops its uv beside the cached venv, never on PATH."""
-    uv = tmp_path / ("uv.exe" if sys.platform == "win32" else "uv")
-    uv.touch()
+    uv_bin = tmp_path / ("uv.exe" if sys.platform == "win32" else "uv")
+    uv_bin.touch()
     monkeypatch.setattr(sys, "prefix", str(tmp_path / ".venv"))
 
-    assert server_mod.bundled_uv() == uv
+    assert server_mod.bundled_uv() == uv_bin
 
 
-def test_bundled_uv_absent_in_a_dev_checkout(
+@pytest.mark.usefixtures("_no_packaged_uv")
+def test_bundled_uv_absent_when_neither_is_there(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(sys, "prefix", str(tmp_path / ".venv"))
@@ -175,22 +200,25 @@ def test_bundled_uv_absent_in_a_dev_checkout(
     assert server_mod.bundled_uv() is None
 
 
-def test_child_env_points_marimo_at_the_bundled_uv(
+def test_child_env_points_marimo_at_a_uv_it_can_run(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Regression: without UV, marimo infers "pip" because it is inside a venv,
     but a uv-built venv has no pip — so installing a package from a notebook
     failed in the packaged app."""
-    uv = tmp_path / ("uv.exe" if sys.platform == "win32" else "uv")
-    uv.touch()
-    monkeypatch.setattr(sys, "prefix", str(tmp_path / ".venv"))
+    import uv
+
+    packaged = tmp_path / "packaged-uv"
+    packaged.touch()
+    monkeypatch.setattr(uv, "find_uv_bin", lambda: str(packaged))
 
     env = server_mod.child_env()
 
-    assert env["UV"] == str(uv)
+    assert env["UV"] == str(packaged)
     assert env["PATH"].split(os.pathsep)[0] == str(tmp_path)
 
 
+@pytest.mark.usefixtures("_no_packaged_uv")
 def test_child_env_falls_back_to_uv_on_path(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -200,6 +228,7 @@ def test_child_env_falls_back_to_uv_on_path(
     assert server_mod.child_env()["UV"] == "/somewhere/bin/uv"
 
 
+@pytest.mark.usefixtures("_no_packaged_uv")
 def test_child_env_without_any_uv_is_left_alone(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -247,3 +276,35 @@ def test_stop_kills_the_grandchildren_too(tmp_path: Path) -> None:
     with contextlib.suppress(ProcessLookupError):
         os.kill(grandchild, 9)
     pytest.fail("the grandchild survived stop()")
+
+
+# -- how marimo gets launched ---------------------------------------------
+
+
+def test_python_command_uses_the_interpreter_when_there_is_one() -> None:
+    assert server_mod.python_command() == [sys.executable, "-m", "marimo"]
+
+
+def test_python_command_re_invokes_the_app_when_there_is_no_interpreter(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A Briefcase app embeds libpython and ships no python executable, so
+    sys.executable is the app itself; `-m marimo` would just relaunch the app,
+    recursively."""
+    stub = "/Applications/marimo desktop.app/Contents/MacOS/marimo desktop"
+    monkeypatch.setattr(sys, "executable", stub)
+
+    assert server_mod.python_command() == [stub, server_mod.MARIMO_CLI_FLAG]
+
+
+def test_command_is_built_on_top_of_python_command(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    stub = "/Applications/marimo desktop.app/Contents/MacOS/marimo desktop"
+    monkeypatch.setattr(sys, "executable", stub)
+    srv = MarimoServer(tmp_path)
+    srv.port = 4242
+
+    cmd = srv._command()
+
+    assert cmd[:3] == [stub, server_mod.MARIMO_CLI_FLAG, "edit"]

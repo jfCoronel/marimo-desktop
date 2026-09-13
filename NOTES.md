@@ -431,6 +431,74 @@ comprueba que muere.
 `start_new_session=True`, `killpg` alcanza al **grupo de pytest** y el test
 se suicida. Está comentado en el test.
 
+### macOS pasa a Briefcase (sesión 5)
+
+El plan B dejó de ser plan B. Motivo: con ux **no hay firma válida posible**
+(ver la nota anterior), y eso no es un detalle estético — el `.app` se declara
+**"dañado"** y macOS no ofrece ninguna salida por interfaz. Comparación
+directa en la misma máquina con `syspolicy_check distribution`:
+
+| Empaquetador | Veredicto |
+|---|---|
+| ux | `Severity: **Fatal**` — *Codesign Error: code has no resources but signature indicates they must be present* |
+| Briefcase | `Severity: **Warning**` — *Adhoc signed app... may run locally* |
+
+Con Briefcase, `codesign --verify` responde **"valid on disk"** y *"satisfies
+its Designated Requirement"*, con `Sealed Resources version=2 rules=13
+files=4998`. Es decir, el problema baja a "app sin notarizar", que **sí**
+tiene su botón de *Abrir igualmente*.
+
+Ventajas adicionales, todas verificadas:
+
+- **Universal binary** (`universal_build = true`): `file` confirma
+  `x86_64` + `arm64` en el mismo ejecutable → **los Mac Intel quedan
+  cubiertos**, cosa que con ux era imposible.
+- **Sin descarga en el primer arranque**: Python y marimo van dentro.
+- `CFBundleVersion` correcto (ux lo dejaba fijo en 1.0.0).
+
+Coste: **104 MB** de DMG (263 MB instalado) frente a los 18 MB de ux.
+
+#### Lo que hubo que cambiar en el código
+
+1. **`briefcase` necesita correr sobre un intérprete que cumpla
+   `requires-python`** (`<3.14`) o rechaza el proyecto → `uv tool install
+   --python 3.13 briefcase`.
+2. `license.file` (PEP 621) choca con `license-files` (PEP 639) → eliminado
+   de `[tool.briefcase]`.
+3. `resources` no es una clave de Briefcase; el contenido extra va en
+   `sources`, así que `notebooks/` se movió ahí.
+4. Briefcase quiere **`.icns`**, no PNG → `assets/icon.icns` generado con
+   `sips`+`iconutil`.
+5. **`SAMPLES_DIR`**: Briefcase deja `notebooks/` un nivel más arriba que ux
+   (`Contents/Resources/app/notebooks`) → `_find_samples_dir()` busca en
+   ambos sitios en vez de asumir uno.
+6. **No hay `uv` dentro** (ux sí traía el suyo) → se añade el paquete `uv` a
+   las dependencias: la rueda trae el binario y expone `find_uv_bin()`.
+   `bundled_uv()` lo prefiere y cae al de ux / al del PATH.
+7. **El problema gordo: en un `.app` de Briefcase no existe ningún ejecutable
+   de Python.** Solo está el framework como *librería*; el binario stub
+   inicializa el intérprete en memoria. Por tanto `sys.executable` **es la
+   propia app**, y nuestro `[sys.executable, "-m", "marimo", …]` **relanzaba
+   la app recursivamente** (se veían varias copias en `ps` y ningún puerto a
+   la escucha). Solución: `python_command()` detecta si `sys.executable`
+   parece un Python; si no, la app **se invoca a sí misma** con un flag
+   privado (`--exec-marimo-cli`) que `launcher.main()` intercepta y entrega a
+   la CLI de marimo en el mismo proceso.
+   - Comprobado que esto **no duplica iconos en el Dock**: `lsappinfo` ve una
+     sola instancia registrada; los hijos quedan como `UIElement`/
+     `BackgroundOnly`.
+   - Comprobado que **no rompe el sandbox**: los kernels por notebook los
+     lanza marimo con `[venv_python, "-m", "marimo._ipc.launch_kernel"]`,
+     el Python del entorno que crea uv, no `sys.executable`.
+8. **El stub de Briefcase no reenvía stdout** (*"No Python NSLog handler
+   found"*), así que el smoke test no podía leer la URL. Añadido
+   `MARIMO_DESKTOP_URL_FILE`: si está definida, el launcher escribe la URL
+   ahí. `smoke_bundle.py` lee el fichero o la salida, lo que llegue antes.
+
+Linux y Windows **siguen con ux**: ahí no hay problema de firma que resolver,
+el binario es pequeño y el empaquetado (instalador Inno / tarball con
+`.desktop`) ya funciona.
+
 ### ux-py como empaquetador (con Briefcase de reserva)
 
 [`ux-py`](https://github.com/i2y/ux) (`ux bundle`) hace exactamente lo que el plan

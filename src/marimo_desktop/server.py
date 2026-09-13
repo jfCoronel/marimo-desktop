@@ -15,6 +15,10 @@ from pathlib import Path
 
 HOST = "127.0.0.1"
 
+# Private flag: the app re-invoking itself as a marimo interpreter. See
+# python_command() and launcher.main().
+MARIMO_CLI_FLAG = "--exec-marimo-cli"
+
 
 def find_free_port() -> int:
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
@@ -22,12 +26,42 @@ def find_free_port() -> int:
         return sock.getsockname()[1]
 
 
-def bundled_uv() -> Path | None:
-    """The `uv` ux ships inside the bundle, next to the cached venv.
+def python_command() -> list[str]:
+    """The command prefix that runs marimo's CLI.
 
-    ux puts it there but never on PATH, and an app launched from Finder gets
-    a minimal PATH anyway.
+    Normally ``sys.executable -m marimo``. A Briefcase app has **no Python
+    executable at all** — it embeds libpython and runs our package inside its
+    own stub binary — so ``sys.executable`` there is the app itself, and
+    passing it ``-m marimo`` just relaunches the app (recursively). In that
+    case the app re-invokes itself with a private flag and hands over to
+    marimo's CLI in-process.
     """
+    exe = Path(sys.executable)
+    if exe.stem.lower().startswith("python"):
+        return [str(exe), "-m", "marimo"]
+    return [str(exe), MARIMO_CLI_FLAG]
+
+
+def bundled_uv() -> Path | None:
+    """Locate a uv binary that travels with the app.
+
+    Nothing on the user's machine can be relied on: an app launched from
+    Finder gets a minimal PATH, and the interpreter we run on is one we
+    shipped. Two places it can be, in order of preference:
+
+    1. the ``uv`` wheel, which carries the binary — this is the one Briefcase
+       installs into the bundle;
+    2. next to the cached venv, where ux drops its own copy.
+    """
+    try:
+        from uv import find_uv_bin
+
+        packaged = Path(find_uv_bin())
+        if packaged.is_file():
+            return packaged
+    except (ImportError, FileNotFoundError):
+        pass
+
     name = "uv.exe" if sys.platform == "win32" else "uv"
     candidate = Path(sys.prefix).parent / name
     return candidate if candidate.is_file() else None
@@ -99,9 +133,7 @@ class MarimoServer:
 
     def _command(self) -> list[str]:
         cmd = [
-            sys.executable,
-            "-m",
-            "marimo",
+            *python_command(),
             self.mode,
             str(self.target),
             "--headless",

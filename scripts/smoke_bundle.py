@@ -41,11 +41,22 @@ def executable_in(bundle: Path) -> Path:
     return bundle
 
 
-def wait_for_url(proc: subprocess.Popen[str], log: Path, timeout: float) -> str | None:
-    """Poll the log for the launcher's ready line (it may take a while: the
-    first run of an ux bundle downloads its interpreter and wheels)."""
+def wait_for_url(
+    proc: subprocess.Popen[str], log: Path, url_file: Path, timeout: float
+) -> str | None:
+    """Wait for the bundle to report a URL.
+
+    Two channels, because a Briefcase app runs under a stub that never
+    forwards stdout: the printed line, and a file the launcher writes when
+    MARIMO_DESKTOP_URL_FILE is set. First run of an ux bundle downloads its
+    interpreter and wheels, so this can take minutes.
+    """
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
+        if url_file.is_file():
+            reported = url_file.read_text(encoding="utf-8").strip()
+            if reported:
+                return reported
         text = log.read_text(encoding="utf-8", errors="replace")
         for line in text.splitlines():
             if READY_MARKER in line:
@@ -126,6 +137,7 @@ def main() -> int:
     with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
         log_path = Path(tmp) / "bundle.log"
         log_path.touch()
+        url_path = Path(tmp) / "url.txt"
         env = dict(
             os.environ,
             # Unbuffered: the launcher's print() would otherwise sit in a pipe
@@ -133,6 +145,7 @@ def main() -> int:
             PYTHONUNBUFFERED="1",
             # Never touch the real ~/marimo notebooks from a smoke test.
             MARIMO_DESKTOP_NOTEBOOKS=str(Path(tmp) / "notebooks"),
+            MARIMO_DESKTOP_URL_FILE=str(url_path),
         )
         with log_path.open("w", encoding="utf-8") as log_file:
             proc = subprocess.Popen(  # noqa: S603
@@ -144,7 +157,7 @@ def main() -> int:
                 **spawn_kwargs(),  # type: ignore[arg-type]
             )
             try:
-                url = wait_for_url(proc, log_path, args.timeout)
+                url = wait_for_url(proc, log_path, url_path, args.timeout)
                 if url is None:
                     return 1
                 print(f"bundle reports: {url}")

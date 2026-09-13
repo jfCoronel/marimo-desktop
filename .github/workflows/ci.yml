@@ -26,8 +26,6 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # Windows and Linux have never been exercised before — the per-platform
-        # branches in paths.py/gui.py get their first real run here.
         os: [macos-latest, ubuntu-latest, windows-latest]
         python: ["3.12", "3.13"]   # matches requires-python >=3.12,<3.14
 
@@ -85,7 +83,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-latest, ubuntu-latest, windows-latest]
+        # macOS ships from Briefcase now (see the macos-app job); ux only
+        # builds what we actually distribute for Linux and Windows.
+        os: [ubuntu-latest, windows-latest]
 
     steps:
       - uses: actions/checkout@v5
@@ -100,23 +100,12 @@ jobs:
       - name: Install ux
         run: uv tool install ux-py
 
-      # macOS gets the .app (icon, Dock name, double-clickable); everywhere else
-      # ux produces a plain binary — `--format app` is macOS-only.
-      - name: Build bundle (macOS .app)
-        if: runner.os == 'macOS'
-        run: ux bundle --format app --output ./dist/
-
       - name: Build bundle (binary)
-        if: runner.os != 'macOS'
         run: ux bundle --output ./dist/
 
       # The tests prove the code works; this proves the *artifact* does — it
       # launches, bootstraps its own interpreter, and gets marimo answering.
       # First run downloads the interpreter and wheels, hence the long timeout.
-      - name: Smoke test the bundle (macOS)
-        if: runner.os == 'macOS'
-        run: uv run --no-project python scripts/smoke_bundle.py dist/marimo-desktop.app
-
       - name: Smoke test the bundle (Linux)
         if: runner.os == 'Linux'
         run: uv run --no-project python scripts/smoke_bundle.py dist/marimo-desktop
@@ -129,8 +118,39 @@ jobs:
         with:
           name: bundle-${{ matrix.os }}
           path: |
-            dist/marimo-desktop.app
             dist/marimo-desktop
             dist/marimo-desktop.exe
           if-no-files-found: error
           retention-days: 14
+
+  # The macOS artifact is built by Briefcase; ux's signature is rejected by
+  # Gatekeeper outright. Verified here on every push so a break shows up
+  # before a release rather than during one.
+  macos-app:
+    name: macOS app (briefcase)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: false
+
+      - name: Install briefcase
+        # Briefcase must run on an interpreter that satisfies requires-python
+        # (<3.14), or it refuses the project.
+        run: uv tool install --python 3.13 briefcase
+
+      - name: Build the app
+        run: |
+          briefcase create macOS
+          briefcase build macOS
+
+      - name: Smoke test the app
+        run: |
+          uv run --no-project python scripts/smoke_bundle.py \
+            "build/marimo-desktop/macos/app/marimo desktop.app"
+
+      - name: The signature must actually validate
+        run: |
+          codesign --verify --verbose=2 "build/marimo-desktop/macos/app/marimo desktop.app"

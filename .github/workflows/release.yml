@@ -41,10 +41,10 @@ jobs:
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
 
-  # Apple Silicon only. Intel would need a macos-13 runner (they queue for
-  # ages now) — cross-compiling is not an option: `ux bundle --format app
-  # --target darwin-x86_64` silently produces an arm64 executable inside the
-  # .app, so the "Intel" DMG would be broken for exactly the people it is for.
+  # macOS is packaged with Briefcase, not ux: ux leaves a signature macOS
+  # rejects outright ("damaged", with no override in the UI), and it cannot be
+  # re-signed because it appends its payload to the Mach-O. Briefcase produces
+  # a normally structured, validly ad-hoc-signed, universal app.
   macos:
     needs: version
     runs-on: macos-latest
@@ -57,23 +57,32 @@ jobs:
         with:
           enable-cache: false
 
-      - run: uv tool install ux-py
+      - name: Install briefcase
+        # Briefcase must run on an interpreter that satisfies requires-python
+        # (<3.14), or it refuses the project.
+        run: uv tool install --python 3.13 briefcase
 
-      # --codesign needs an Apple Developer ID we don't have; ux still ad-hoc
-      # signs the bundle, and --dmg works without it.
-      - run: ux bundle --format app --dmg --output ./dist/
+      - name: Build the app
+        run: |
+          briefcase create macOS
+          briefcase build macOS
 
       - name: Smoke test the app
-        run: uv run --no-project python scripts/smoke_bundle.py dist/marimo-desktop.app
+        run: |
+          uv run --no-project python scripts/smoke_bundle.py \
+            "build/marimo-desktop/macos/app/marimo desktop.app"
+
+      - name: Package the DMG
+        run: briefcase package macOS --adhoc-sign
 
       - name: Name the DMG after the release
         run: |
-          mv dist/marimo-desktop.dmg \
-             "dist/marimo-desktop-${{ needs.version.outputs.version }}-macos-arm64.dmg"
+          mv "dist/marimo desktop-${{ needs.version.outputs.version }}.dmg" \
+             "dist/marimo-desktop-${{ needs.version.outputs.version }}-macos-universal.dmg"
 
       - uses: actions/upload-artifact@v4
         with:
-          name: release-macos-arm64
+          name: release-macos
           path: dist/*.dmg
           if-no-files-found: error
 

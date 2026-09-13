@@ -17,19 +17,15 @@ interpreter, so there is nothing to `pip install` and no venv to manage.
 
 | Platform | Download |
 |---|---|
-| macOS (Apple Silicon) | `marimo-desktop-{version}-macos-arm64.dmg` |
+| macOS 11+ (Intel and Apple Silicon) | `marimo-desktop-{version}-macos-universal.dmg` |
 | Windows 10/11 (64-bit) | `marimo-desktop-{version}-windows-x64-setup.exe` |
 | Linux (x86_64) | `marimo-desktop-{version}-linux-x86_64.tar.gz` |
 
-On an **Intel Mac** there is no download yet — the build tool produces an
-Apple Silicon binary even when asked for x86_64, so shipping one would mean
-shipping something that cannot run. Until that is sorted out, install from
-source: `uv tool install marimo` and run `uvx marimo edit`.
-
-**First launch downloads a Python interpreter and marimo (~200 MB) and can
-take a few minutes.** It happens once; later launches are instant. The
-download goes to `~/Library/Caches/ux/` (macOS), `%LOCALAPPDATA%\\ux\\`
-(Windows) or `~/.cache/ux/` (Linux).
+The macOS build carries Python and marimo inside it, so it is larger to
+download but starts straight away. **On Windows and Linux the first launch
+downloads a Python interpreter and marimo (~200 MB) and can take a few
+minutes** — once only; later launches are instant, and the download goes to
+`%LOCALAPPDATA%\\ux\\` or `~/.cache/ux/`.
 
 ## These builds are not signed
 
@@ -40,25 +36,19 @@ this one included.
 
 ### macOS
 
-macOS will say **"marimo-desktop is damaged and can't be opened"**. It is not
-damaged: the packaging tool leaves the app with a signature macOS considers
-invalid, and for that particular verdict there is no override anywhere in
-System Settings. Don't go looking in Privacy & Security — nothing about
-marimo-desktop appears there.
+The app is signed, but not *notarised* — that needs a paid Apple Developer
+account. So the first launch is refused:
 
-Clearing the download flag fixes it. After dragging the app to Applications,
-run this once in Terminal:
+1. Open the `.dmg` and drag **marimo desktop** to Applications.
+2. Launch it. macOS says it cannot verify the developer. Click **Done**.
+3. Open **System Settings → Privacy & Security**, scroll to the bottom, and
+   click **Open Anyway** next to the message about marimo desktop.
+
+From then on it opens normally. If you prefer one line in Terminal instead:
 
 ```sh
-xattr -dr com.apple.quarantine /Applications/marimo-desktop.app
+xattr -dr com.apple.quarantine "/Applications/marimo desktop.app"
 ```
-
-Then open it normally. You only ever do this once, and you can check what the
-command does first: it removes the "downloaded from the internet" attribute
-that makes macOS refuse the app.
-
-Sorry for the Terminal detour — a proper fix needs either a paid Apple
-Developer account or a different packaging tool, and both are on the list.
 
 ### Windows
 

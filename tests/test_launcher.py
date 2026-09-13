@@ -123,3 +123,44 @@ def test_strip_leaves_real_arguments_untouched() -> None:
 
 def test_strip_does_not_swallow_a_flag_that_follows_a_valueless_ns_flag() -> None:
     assert launcher._strip_macos_args(["-NSSomething", "--headless"]) == ["--headless"]
+
+
+def test_the_private_flag_hands_over_to_marimos_cli(
+    calls: list[dict], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Re-invocation path for bundles with no python executable."""
+    from marimo_desktop.server import MARIMO_CLI_FLAG
+
+    handed: list[list[str]] = []
+    monkeypatch.setattr(launcher, "_exec_marimo_cli", lambda args: handed.append(args) or 0)
+
+    assert launcher.main([MARIMO_CLI_FLAG, "edit", "/nb", "--headless"]) == 0
+    assert handed == [["edit", "/nb", "--headless"]]
+    assert calls == [], "must not fall through to our own headless mode"
+
+
+def test_url_file_hook_is_a_no_op_without_the_variable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("MARIMO_DESKTOP_URL_FILE", raising=False)
+
+    launcher._publish_url("http://127.0.0.1:1234")  # must not raise
+
+
+def test_url_file_hook_writes_where_asked(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A Briefcase app's stub never forwards stdout, so the printed URL is
+    invisible — the smoke test reads this file instead."""
+    target = tmp_path / "url.txt"
+    monkeypatch.setenv("MARIMO_DESKTOP_URL_FILE", str(target))
+
+    launcher._publish_url("http://127.0.0.1:1234")
+
+    assert target.read_text(encoding="utf-8") == "http://127.0.0.1:1234"
+
+
+def test_url_file_hook_survives_an_unwritable_path(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("MARIMO_DESKTOP_URL_FILE", str(tmp_path / "nope" / "url.txt"))
+
+    launcher._publish_url("http://127.0.0.1:1234")  # must not take the app down
