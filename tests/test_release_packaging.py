@@ -112,11 +112,20 @@ def test_tarball_ships_everything_install_needs(tarball: tarfile.TarFile) -> Non
     } <= names
 
 
-def test_tarball_keeps_the_executable_bit(tarball: tarfile.TarFile) -> None:
-    """tar preserves modes; a non-executable install.sh would be a dead end."""
+def test_tarball_sets_modes_regardless_of_the_build_machine(
+    tarball: tarfile.TarFile,
+) -> None:
+    """chmod is a no-op on Windows, so the modes are stamped into the archive
+    rather than read off the filesystem — otherwise install.sh arrives
+    unrunnable whenever the release is built anywhere but Linux."""
+    runnable = {"marimo-desktop", "install.sh", "uninstall.sh"}
     for member in tarball.getmembers():
-        if Path(member.name).name in {"marimo-desktop", "install.sh", "uninstall.sh"}:
-            assert member.mode & stat.S_IXUSR, f"{member.name} is not executable"
+        if member.isdir():
+            continue
+        executable = bool(member.mode & stat.S_IXUSR)
+        assert executable == (Path(member.name).name in runnable), (
+            f"{member.name} has mode {member.mode:o}"
+        )
 
 
 # -- release notes --------------------------------------------------------

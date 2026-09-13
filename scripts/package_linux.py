@@ -48,6 +48,24 @@ script.
 
 URL = "https://github.com/jfCoronel/marimo-desktop"
 
+# Must be runnable once unpacked on the target machine.
+EXECUTABLE = {"marimo-desktop", "install.sh", "uninstall.sh"}
+
+
+def _normalise(info: tarfile.TarInfo) -> tarfile.TarInfo:
+    """Stamp Linux ownership and permissions into the archive.
+
+    The modes must not come from the build machine's filesystem: chmod is a
+    no-op on Windows, which would ship an install.sh nobody can run.
+    """
+    info.uid = info.gid = 0
+    info.uname = info.gname = "root"
+    if info.isdir():
+        info.mode = 0o755
+    else:
+        info.mode = 0o755 if info.name.rsplit("/", 1)[-1] in EXECUTABLE else 0o644
+    return info
+
 
 def build(binary: Path, version: str, out_dir: Path) -> Path:
     stage_name = f"marimo-desktop-{version}-linux-x86_64"
@@ -70,7 +88,7 @@ def build(binary: Path, version: str, out_dir: Path) -> Path:
     tarball.unlink(missing_ok=True)
     # Keep the top-level directory so it doesn't explode into the user's cwd.
     with tarfile.open(tarball, "w:gz") as tar:
-        tar.add(stage, arcname=stage_name)
+        tar.add(stage, arcname=stage_name, filter=_normalise)
     shutil.rmtree(stage)
     return tarball
 
