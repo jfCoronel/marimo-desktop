@@ -205,6 +205,24 @@ siguiente argumento si este empieza por `-`, es decir, si es otro flag).
 De paso, `_add_recent` pasó de método de `App` a función de módulo: no usaba
 `self` para nada y así se puede probar sin abrir una ventana.
 
+**Lo que dijo el primer CI** (dos fallos, ambos instructivos):
+
+- *Windows*: cuatro pruebas comparaban contra rutas POSIX literales (`"/a"`),
+  pero allí `str(Path("/a"))` es `"\a"`. Fallo de las pruebas, no del código;
+  ahora construyen las rutas con `tmp_path` y comparan contra `str()` de lo
+  mismo.
+- *Linux*: `uv` cogió el Python **del sistema** (`/usr/bin/python3.12`), que en
+  Ubuntu viene sin `tkinter` → el chequeo de Tk falló. No decía nada sobre
+  nuestro intérprete. Arreglado con `UV_PYTHON_PREFERENCE: only-managed` en el
+  workflow, que fija un python-build-standalone en los tres runners —
+  exactamente el tipo de intérprete que ux embebe en el bundle.
+
+Con eso, **7/7 jobs en verde**, y de paso un dato que no teníamos: el
+intérprete gestionado trae Tk en las tres plataformas — **Linux Tk 9.0,
+Windows Tk 8.6, macOS Tk 8.6** (CPython 3.12.14). Es decir, la ventana de
+control no es un problema fuera de macOS; lo que sigue sin probarse es el
+empaquetado en sí (`ux bundle --target …`), no la GUI.
+
 ### ux-py como empaquetador (con Briefcase de reserva)
 
 [`ux-py`](https://github.com/i2y/ux) (`ux bundle`) hace exactamente lo que el plan
