@@ -16,35 +16,43 @@ from marimo_desktop import config, gui
 # -- recent folders -------------------------------------------------------
 
 
-def test_add_recent_puts_the_newest_first() -> None:
-    gui._add_recent(Path("/a"))
-    gui._add_recent(Path("/b"))
+def test_add_recent_puts_the_newest_first(tmp_path: Path) -> None:
+    first, second = tmp_path / "a", tmp_path / "b"
 
-    assert config.get("recent_folders") == ["/b", "/a"]
+    gui._add_recent(first)
+    gui._add_recent(second)
 
-
-def test_add_recent_deduplicates_instead_of_growing() -> None:
-    gui._add_recent(Path("/a"))
-    gui._add_recent(Path("/b"))
-    gui._add_recent(Path("/a"))
-
-    assert config.get("recent_folders") == ["/a", "/b"]
+    assert config.get("recent_folders") == [str(second), str(first)]
 
 
-def test_add_recent_is_capped() -> None:
-    for i in range(gui._MAX_RECENTS + 5):
-        gui._add_recent(Path(f"/f{i}"))
+def test_add_recent_deduplicates_instead_of_growing(tmp_path: Path) -> None:
+    first, second = tmp_path / "a", tmp_path / "b"
+
+    gui._add_recent(first)
+    gui._add_recent(second)
+    gui._add_recent(first)
+
+    assert config.get("recent_folders") == [str(first), str(second)]
+
+
+def test_add_recent_is_capped(tmp_path: Path) -> None:
+    folders = [tmp_path / f"f{i}" for i in range(gui._MAX_RECENTS + 5)]
+
+    for folder in folders:
+        gui._add_recent(folder)
 
     recents = config.get("recent_folders")
     assert len(recents) == gui._MAX_RECENTS
-    assert recents[0] == f"/f{gui._MAX_RECENTS + 4}"
+    assert recents[0] == str(folders[-1])
 
 
 # -- path display ---------------------------------------------------------
 
 
 def test_shorten_leaves_short_paths_alone() -> None:
-    assert gui._shorten(Path("/a/b")) == "/a/b"
+    """Short enough to show whole: printed verbatim, native separators and all."""
+    path = Path("/a/b")
+    assert gui._shorten(path) == str(path)
 
 
 def test_shorten_elides_the_middle_of_a_deep_path() -> None:

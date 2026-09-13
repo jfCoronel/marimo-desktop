@@ -9,6 +9,12 @@ on:
 permissions:
   contents: read
 
+env:
+  # Test against a *managed* (python-build-standalone) interpreter on every OS —
+  # that's the kind ux embeds in the bundle. Without this, uv picks the runner's
+  # system Python, which on Ubuntu has no tkinter and says nothing about ours.
+  UV_PYTHON_PREFERENCE: only-managed
+
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
