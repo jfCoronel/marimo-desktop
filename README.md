@@ -182,10 +182,12 @@ release body.
 - [x] Test suite + ruff, run on CI across macOS / Linux / Windows
 - [x] Linux and Windows bundles built and launched in CI (macOS `.app` ~18 MB,
       Linux binary 24 MB, Windows `.exe` 22 MB)
-- [ ] File association for `.py` marimo notebooks
-- [ ] Signing + notarisation (needs a paid Apple Developer account; until then
-      downloads need the manual "open anyway" step)
-- [ ] Release workflow: signed/notarised installers published on tag
 - [x] Icon / desktop integration for Linux (.desktop + installer) and Windows
       (Inno Setup installer)
 - [x] Tagged releases publishing installers for all three platforms
+- [ ] Signing + notarisation (needs a paid Apple Developer account; until then
+      downloads need the manual "open anyway" step)
+- ~~File association for `.py`~~ — dropped: a marimo notebook is an ordinary
+  `.py`, so there is no extension to claim without fighting every editor on
+  the machine, and `marimo edit` simply exits on a non-notebook `.py` with no
+  console to show the error in. See NOTES.md.

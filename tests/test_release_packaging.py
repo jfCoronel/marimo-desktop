@@ -139,7 +139,6 @@ def notes() -> str:
 def test_notes_name_every_published_artifact(notes: str) -> None:
     for suffix in (
         "macos-arm64.dmg",
-        "macos-x86_64.dmg",
         "windows-x64-setup.exe",
         "linux-x86_64.tar.gz",
     ):
@@ -156,3 +155,9 @@ def test_notes_explain_how_to_open_an_unsigned_build(notes: str) -> None:
 
 def test_notes_warn_about_the_first_launch_download(notes: str) -> None:
     assert "200 MB" in notes
+
+
+def test_notes_do_not_promise_an_intel_build(notes: str) -> None:
+    """Nothing in the release builds an x86_64 Mac binary — don't imply one."""
+    assert "macos-x86_64" not in notes
+    assert "Intel Mac" in notes

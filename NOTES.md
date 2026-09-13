@@ -292,7 +292,15 @@ Windows reciben un binario pelado y hay que vestirlo):
   apuntan al nuestro vía `IconFilename` (`assets/icon.ico`, generado con
   Pillow desde el PNG igual que el `.icns`).
 - **macOS**: `.dmg` de ux, con el `.app` y el enlace a `/Applications`
-  dentro (verificado montándolo).
+  dentro (verificado montándolo). **Solo Apple Silicon**: los runners
+  `macos-13` (Intel) se quedan encolados indefinidamente (25+ min y
+  cancelado), y compilar cruzado **no vale** — `ux bundle --format app
+  --target darwin-x86_64` produce un `.app` cuyo ejecutable sigue siendo
+  **arm64** (`file …/Contents/MacOS/marimo-desktop` → `Mach-O 64-bit
+  executable arm64`), o sea un DMG "de Intel" que no arranca en un Intel.
+  Curiosamente `ux bundle --target darwin-x86_64` **sin** `--format app` sí
+  da un binario x86_64 de verdad (verificado arrancándolo bajo Rosetta), así
+  que el fallo está en el camino del bundle `.app`. Otro caveat de ux 0.1.6.
 
 El workflow `release.yml` se dispara con tags `v*`, **rechaza el build si el
 tag no coincide con la versión de `pyproject.toml`**, construye en el runner
@@ -303,6 +311,41 @@ pestaña Actions con un tag existente sin volver a etiquetar.
 La versión ahora se ve en la app: título de la ventana y primera línea del
 pie (`marimo desktop 0.3.0 · © 2026 jfCoronel`), leída de `__version__` —
 necesario para saber qué build tienes cuando la descargas.
+
+### Asociación de archivos `.py`: descartada (sesión 5)
+
+Estaba en el roadmap desde el principio; al ir a implementarla, el usuario
+preguntó qué pasaría exactamente al hacer doble clic, y la respuesta la
+mata. Comprobado ejecutando `marimo edit` sobre un `.py` normal:
+
+```
+Error: Python script not recognized as a marimo notebook.
+  Tip: Try converting with
+    marimo convert plain.py -o plain_nb.py
+```
+
+El fichero **no se modifica** (no hay riesgo de destrozar el script de
+nadie), pero **el servidor sale inmediatamente**. Lanzado desde Finder no
+hay terminal donde leer ese error: el usuario vería el icono rebotar en el
+Dock y nada más. Habría que construir diálogos de error nativos solo para
+ese caso.
+
+Y el problema de fondo es peor: **un notebook de marimo es un `.py`
+indistinguible de cualquier otro**. No hay extensión propia que reclamar, así
+que asociar `.py` significa competir con VS Code/PyCharm por *todos* los
+ficheros Python del sistema; con `LSHandlerRank = Alternate` lo único que se
+gana es una entrada más en "Abrir con".
+
+Coste que se habría pagado por eso: script de post-proceso del `Info.plist`
+en cada build (ux 0.1.6 no expone `CFBundleDocumentTypes`; el plist generado
+tiene 6 claves) + handler de Apple Events
+(`root.createcommand("::tk::mac::OpenDocument", …)`, porque en macOS el doble
+clic sobre un documento **no llega por `argv`**) + los diálogos de error de
+arriba. Todo ello para duplicar algo que marimo ya hace: su página de inicio
+lista y abre los notebooks de la carpeta.
+
+Lo que sí queda cubierto sin nada de esto: `marimo-desktop notebook.py` desde
+la línea de comandos ya abre un fichero concreto.
 
 ### ux-py como empaquetador (con Briefcase de reserva)
 
@@ -371,14 +414,8 @@ intérprete empaquetado que fallaba (`tk.Tk()` pasó de excepción a `OK`).
       no con `uv run` (ver nota de diseño abajo)
 - [x] Bug de Tcl/Tk en el `.app` empaquetado arreglado (ver nota arriba)
 - [x] Suite de tests + ruff + CI (macOS / Linux / Windows × Python 3.12/3.13)
-- [ ] Asociación de archivos para `.py` de marimo. Coste real medido en sesión 5:
-  `ux bundle 0.1.6` **no tiene opción para añadir claves al `Info.plist`** (el
-  generado tiene 6 claves, sin `CFBundleDocumentTypes`), así que hace falta un
-  script de post-proceso tras cada build; y en macOS el doble clic sobre un
-  documento **no llega por `argv`** sino como Apple Event → habría que
-  engancharlo con `root.createcommand("::tk::mac::OpenDocument", …)`. Decisión
-  de diseño pendiente: reclamar `.py` a nivel de sistema le roba el doble clic
-  al editor del usuario; probablemente `LSHandlerRank = Alternate`.
+- ~~Asociación de archivos para `.py` de marimo~~ — **descartado** en sesión 5,
+  ver la nota de diseño más abajo.
 - [ ] `bundle_identifier` en minúsculas ya es correcto (reverse-DNS); revisar solo
   si cambia el usuario de GitHub
 - [x] Workflow de release: instaladores para las tres plataformas publicados

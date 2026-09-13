@@ -18,9 +18,13 @@ interpreter, so there is nothing to `pip install` and no venv to manage.
 | Platform | Download |
 |---|---|
 | macOS (Apple Silicon) | `marimo-desktop-{version}-macos-arm64.dmg` |
-| macOS (Intel) | `marimo-desktop-{version}-macos-x86_64.dmg` |
 | Windows 10/11 (64-bit) | `marimo-desktop-{version}-windows-x64-setup.exe` |
 | Linux (x86_64) | `marimo-desktop-{version}-linux-x86_64.tar.gz` |
+
+On an **Intel Mac** there is no download yet — the build tool produces an
+Apple Silicon binary even when asked for x86_64, so shipping one would mean
+shipping something that cannot run. Until that is sorted out, install from
+source: `uv tool install marimo` and run `uvx marimo edit`.
 
 **First launch downloads a Python interpreter and marimo (~200 MB) and can
 take a few minutes.** It happens once; later launches are instant. The

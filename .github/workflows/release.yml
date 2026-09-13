@@ -41,17 +41,13 @@ jobs:
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
 
+  # Apple Silicon only. Intel would need a macos-13 runner (they queue for
+  # ages now) — cross-compiling is not an option: `ux bundle --format app
+  # --target darwin-x86_64` silently produces an arm64 executable inside the
+  # .app, so the "Intel" DMG would be broken for exactly the people it is for.
   macos:
     needs: version
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - runner: macos-latest   # Apple Silicon
-            arch: arm64
-          - runner: macos-13       # Intel
-            arch: x86_64
-    runs-on: ${{ matrix.runner }}
+    runs-on: macos-latest
     steps:
       - uses: actions/checkout@v5
         with:
@@ -73,11 +69,11 @@ jobs:
       - name: Name the DMG after the release
         run: |
           mv dist/marimo-desktop.dmg \
-             "dist/marimo-desktop-${{ needs.version.outputs.version }}-macos-${{ matrix.arch }}.dmg"
+             "dist/marimo-desktop-${{ needs.version.outputs.version }}-macos-arm64.dmg"
 
       - uses: actions/upload-artifact@v4
         with:
-          name: release-macos-${{ matrix.arch }}
+          name: release-macos-arm64
           path: dist/*.dmg
           if-no-files-found: error
 
