@@ -7,10 +7,12 @@ cheap `python -c sleep` stand-in.
 
 from __future__ import annotations
 
+import contextlib
 import os
 import socket
 import subprocess
 import sys
+import time
 import urllib.error
 from pathlib import Path
 
@@ -49,6 +51,7 @@ def test_edit_command_shape(tmp_path: Path) -> None:
     assert cmd[cmd.index("--port") + 1] == "4242"
     assert "--no-token" in cmd
     assert "--skip-update-check" in cmd
+    assert "--sandbox" in cmd
 
 
 def test_run_mode_skips_update_check(tmp_path: Path) -> None:
@@ -59,6 +62,13 @@ def test_run_mode_skips_update_check(tmp_path: Path) -> None:
     assert cmd[3] == "run"
     # `marimo run` has no --skip-update-check flag; passing it would error out.
     assert "--skip-update-check" not in cmd
+
+
+def test_sandbox_can_be_turned_off(tmp_path: Path) -> None:
+    srv = MarimoServer(tmp_path, sandbox=False)
+    srv.port = 4242
+
+    assert "--sandbox" not in srv._command()
 
 
 def test_poll_reports_exited_before_start(tmp_path: Path) -> None:
@@ -111,10 +121,14 @@ def test_start_refuses_to_double_start(tmp_path: Path) -> None:
 def test_stop_terminates_the_process_and_clears_state(tmp_path: Path) -> None:
     srv = MarimoServer(tmp_path)
     srv.port = 4242
+    # start_new_session is not optional here: stop() signals the process
+    # *group*, and without its own group this child shares pytest's — the
+    # test run would kill itself.
     srv._proc = subprocess.Popen(
         [sys.executable, "-c", "import time; time.sleep(30)"],
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
+        **server_mod._spawn_kwargs(),
     )
     proc = srv._proc
     assert srv.running
@@ -194,3 +208,42 @@ def test_child_env_without_any_uv_is_left_alone(
     monkeypatch.delenv("UV", raising=False)
 
     assert "UV" not in server_mod.child_env()
+
+
+def test_stop_kills_the_grandchildren_too(tmp_path: Path) -> None:
+    """In sandbox mode marimo re-launches itself under `uv run` and starts a
+    kernel per notebook, so the process we spawned is not the one holding the
+    port. Stopping only it would leave a live server behind."""
+    if sys.platform == "win32":
+        pytest.skip("POSIX process groups; Windows uses taskkill /T")
+
+    srv = MarimoServer(tmp_path)
+    srv.port = 4242
+    srv._proc = subprocess.Popen(
+        [
+            sys.executable,
+            "-c",
+            "import subprocess,sys,time;"
+            "c=subprocess.Popen([sys.executable,'-c','import time;time.sleep(60)']);"
+            "print(c.pid,flush=True);time.sleep(60)",
+        ],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+        text=True,
+        **server_mod._spawn_kwargs(),
+    )
+    assert srv._proc.stdout is not None
+    grandchild = int(srv._proc.stdout.readline().strip())
+
+    srv.stop(timeout=10.0)
+
+    deadline = time.monotonic() + 10
+    while time.monotonic() < deadline:
+        try:
+            os.kill(grandchild, 0)
+        except ProcessLookupError:
+            return  # gone, as it must be
+        time.sleep(0.2)
+    with contextlib.suppress(ProcessLookupError):
+        os.kill(grandchild, 9)
+    pytest.fail("the grandchild survived stop()")

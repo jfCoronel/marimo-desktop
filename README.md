@@ -28,7 +28,8 @@ Default (`marimo-desktop`, no args) opens the Tk window (`gui.py`). It:
 1. lets you pick the notebooks folder (remembered in `config.json`), or jump
    back to one of the last 8 via **Recent ▾**
 2. **Start marimo** → `server.py` starts `python -m marimo edit <folder>
-   --headless --no-token` on a free `127.0.0.1` port (bundled interpreter)
+   --headless --no-token --sandbox` on a free `127.0.0.1` port (bundled
+   interpreter)
 3. polls until the server answers, then shows the URL as a clickable link
    (opens it in the system's default browser) plus a **Copy URL** button —
    nothing opens automatically, so pasting the URL into a different browser is
@@ -47,6 +48,13 @@ window doesn't duplicate that; see NOTES.md.
 `marimo-desktop --headless [notebook]` skips the window: start, open browser,
 block until Ctrl-C — for scripts and automation. `--run` uses app mode
 (`marimo run`); `--no-browser` suppresses the browser (headless only).
+
+Notebooks run **sandboxed**: each one gets its own uv environment and records
+its dependencies in its own file (a PEP 723 header). That is what makes
+installing a package from a notebook stick — the app's own environment lives
+in a content-hashed cache directory that a new version replaces, so anything
+installed into it would vanish on the next upgrade. The cost is that opening
+a notebook for the first time builds its environment.
 
 Notebooks folder:
 

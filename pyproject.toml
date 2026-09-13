@@ -1,6 +1,6 @@
 [project]
 name = "marimo-desktop"
-version = "0.3.0"
+version = "0.3.1"
 description = "Self-contained desktop app for marimo notebooks — bundled Python, nothing to install"
 readme = "README.md"
 license = "MIT"
@@ -78,7 +78,7 @@ icon = "assets/icon.png"        # PNG auto-converted to ICNS
 [tool.briefcase]
 project_name = "marimo desktop"
 bundle = "io.github.jfcoronel"
-version = "0.3.0"
+version = "0.3.1"
 url = "https://github.com/jfCoronel/marimo-desktop"
 license.file = "LICENSE"
 author = "jfCoronel"

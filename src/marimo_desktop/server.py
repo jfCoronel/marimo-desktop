@@ -5,6 +5,7 @@ from __future__ import annotations
 import contextlib
 import os
 import shutil
+import signal
 import socket
 import subprocess
 import sys
@@ -50,6 +51,26 @@ def child_env() -> dict[str, str]:
     return env
 
 
+def _spawn_kwargs() -> dict[str, object]:
+    if sys.platform == "win32":
+        return {"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP}
+    return {"start_new_session": True}
+
+
+def _signal_group(proc: subprocess.Popen[bytes], *, hard: bool) -> None:
+    """Stop the whole tree, not just the process we spawned."""
+    if sys.platform == "win32":
+        subprocess.run(  # noqa: S603
+            ["taskkill", "/PID", str(proc.pid), "/T", "/F"],  # noqa: S607
+            capture_output=True,
+            check=False,
+        )
+        return
+    sig = signal.SIGKILL if hard else signal.SIGTERM
+    with contextlib.suppress(ProcessLookupError, PermissionError, OSError):
+        os.killpg(os.getpgid(proc.pid), sig)
+
+
 class MarimoServer:
     """A single ``marimo edit``/``marimo run`` process on a local port.
 
@@ -57,9 +78,14 @@ class MarimoServer:
     Tk ``after`` loop) until it returns ``"ready"`` or ``"exited"``.
     """
 
-    def __init__(self, target: Path, mode: str = "edit") -> None:
+    def __init__(self, target: Path, mode: str = "edit", *, sandbox: bool = True) -> None:
         self.target = Path(target)
         self.mode = mode  # "edit" or "run"
+        # Each notebook gets its own uv environment and records its
+        # dependencies in its own file. Without this, packages a user installs
+        # land in the bundle's cache venv, which a new app version replaces —
+        # so every upgrade would silently lose them.
+        self.sandbox = sandbox
         self.port: int | None = None
         self._proc: subprocess.Popen[bytes] | None = None
 
@@ -87,6 +113,8 @@ class MarimoServer:
         ]
         if self.mode == "edit":
             cmd.append("--skip-update-check")
+        if self.sandbox:
+            cmd.append("--sandbox")
         return cmd
 
     def start(self) -> None:
@@ -99,6 +127,11 @@ class MarimoServer:
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             env=child_env(),
+            # Own process group: in sandbox mode marimo re-launches itself
+            # under `uv run` and spawns a kernel per notebook, so the process
+            # we started is not the one holding the port. Terminating only it
+            # would leave a live server behind after Stop.
+            **_spawn_kwargs(),
         )
 
     def poll(self) -> str:
@@ -120,11 +153,11 @@ class MarimoServer:
         if proc is None:
             return
         if proc.poll() is None:
-            proc.terminate()
+            _signal_group(proc, hard=False)
             try:
                 proc.wait(timeout=timeout)
             except subprocess.TimeoutExpired:
-                proc.kill()
+                _signal_group(proc, hard=True)
                 with contextlib.suppress(Exception):
                     proc.wait(timeout=timeout)
         self._proc = None

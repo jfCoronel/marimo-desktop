@@ -375,6 +375,62 @@ lista y abre los notebooks de la carpeta.
 Lo que sí queda cubierto sin nada de esto: `marimo-desktop notebook.py` desde
 la línea de comandos ya abre un fichero concreto.
 
+### Instalar paquetes desde un notebook: `UV` + `--sandbox` (sesión 5)
+
+Detectado por el usuario probando la 0.3.0 instalada: escribir `import numpy`
+en un notebook nuevo y pedir la instalación **no funcionaba**.
+
+Causa, comprobada contra el bundle real (no deducida):
+
+```
+infer_package_manager() → "pip"          # en el bundle, sin UV
+find_spec("pip") → None                  # el venv lo crea uv: no hay pip
+```
+
+`marimo/_config/packages.py` decide así: si existe la variable de entorno
+`UV` → "uv"; si no, y estamos dentro de un venv → **"pip"**. El bundle **sí
+trae su propio `uv`** (`<bundle>/uv`, 36 MB, junto al `.venv`), pero ux no lo
+pone en el `PATH`, y una app lanzada desde Finder hereda un PATH mínimo.
+
+Arreglo en `server.py` (`child_env()`): se pasa `UV=<bundle>/uv` al
+subproceso de marimo (`find_uv_bin()` es literalmente
+`os.environ.get("UV", "uv")`) y su directorio al `PATH` para los
+`which("uv")` que hace el código de sandbox. En desarrollo cae al `uv` del
+PATH. Verificado: `ps eww` sobre el hijo del `.app` reconstruido muestra
+`UV=…/bundles/<hash>/uv` y la inferencia pasa a "uv".
+
+**Además se activa `--sandbox`** (decisión del usuario). Razón específica de
+esta app: sin sandbox los paquetes se instalan en el venv del bundle, que
+vive en `~/Library/Caches/ux/bundles/<hash>/` — y el hash depende del
+contenido, así que **cada actualización de la app perdería lo instalado**.
+Con sandbox cada notebook lleva sus dependencias escritas dentro (cabecera
+PEP 723) y tiene su propio entorno. Verificado que el `uv` del bundle hace
+justo esa operación:
+
+```
+<bundle>/uv add --script nb.py numpy
+→ # /// script … dependencies = ["numpy>=2.5.3"] … ///
+```
+
+Coste: **no añade dependencias** — `pyzmq` (que el modo sandbox de carpeta
+necesita) ya es dependencia base de marimo, no solo del extra `sandbox`,
+comprobado en los metadatos. Sí cuesta tiempo la primera apertura de cada
+notebook, que construye su entorno.
+
+**Efecto secundario que había que cubrir**: en modo sandbox marimo **se
+relanza bajo `uv run`** y arranca un kernel por notebook, así que el proceso
+que lanzamos deja de ser el que sirve. `stop()` terminaba solo a ese padre →
+habría dejado servidores vivos tras pulsar Stop o cerrar la ventana. Ahora
+`MarimoServer` arranca en su propio grupo de procesos
+(`start_new_session` / `CREATE_NEW_PROCESS_GROUP`) y `stop()` señaliza al
+grupo entero (`taskkill /T /F` en Windows) — el mismo patrón que ya hubo que
+aplicar en `scripts/smoke_bundle.py`. Hay un test que lanza un nieto y
+comprueba que muere.
+
+⚠️ Trampa al escribir ese test: si el proceso de prueba no se arranca con
+`start_new_session=True`, `killpg` alcanza al **grupo de pytest** y el test
+se suicida. Está comentado en el test.
+
 ### ux-py como empaquetador (con Briefcase de reserva)
 
 [`ux-py`](https://github.com/i2y/ux) (`ux bundle`) hace exactamente lo que el plan
