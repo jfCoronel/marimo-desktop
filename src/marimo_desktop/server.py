@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import contextlib
+import json
 import os
 import shutil
 import signal
@@ -108,6 +109,95 @@ def child_env() -> dict[str, str]:
     return env
 
 
+def _record_path() -> Path:
+    """Where a running server is recorded, so the next launch can find it."""
+    from marimo_desktop.paths import config_dir
+
+    return config_dir() / "server.json"
+
+
+def _identity(pid: int) -> dict[str, float | int]:
+    """PID plus creation time: a PID alone may since belong to something else."""
+    import psutil
+
+    return {"pid": pid, "created": psutil.Process(pid).create_time()}
+
+
+def _is_alive(identity: dict[str, float | int]) -> bool:
+    import psutil
+
+    try:
+        created = psutil.Process(int(identity["pid"])).create_time()
+    except (psutil.Error, KeyError, TypeError, ValueError):
+        return False
+    return abs(created - float(identity["created"])) < 1.0
+
+
+def _write_record(proc: subprocess.Popen[bytes], port: int) -> None:
+    with contextlib.suppress(Exception):  # bookkeeping must never block a start
+        record = {
+            "server": _identity(proc.pid),
+            "owner": _identity(os.getpid()),
+            "port": port,
+        }
+        _record_path().write_text(json.dumps(record), encoding="utf-8")
+
+
+def _clear_record() -> None:
+    with contextlib.suppress(OSError):
+        _record_path().unlink(missing_ok=True)
+
+
+def reap_leftover_server(timeout: float = 5.0) -> bool:
+    """Stop a server a previous run failed to stop; True if there was one.
+
+    A clean Stop or window close takes the whole tree down, but a crash, a
+    Force Quit or a logout gives us no chance: `uv run` and marimo (two of
+    each, under --sandbox) are adopted by init and keep the port and the
+    kernels' memory. So start() records the server, stop() erases the
+    record, and a record found at the next start is a leftover.
+
+    The server is only touched if it is still the exact process recorded
+    (PID *and* creation time) and the app that started it is gone — another
+    instance of the app may still be using it.
+    """
+    import psutil
+
+    try:
+        text = _record_path().read_text(encoding="utf-8")
+    except OSError:
+        return False
+    try:
+        record = json.loads(text)
+    except ValueError:
+        record = None
+    if not isinstance(record, dict):
+        _clear_record()
+        return False
+    try:
+        if _is_alive(record.get("owner", {})) or not _is_alive(record.get("server", {})):
+            return False
+        root = psutil.Process(int(record["server"]["pid"]))
+        # marimo's inner `uv run` starts its own session, so the process
+        # group does not cover the tree; its parentage does.
+        procs = [root, *root.children(recursive=True)]
+        for proc in procs:
+            with contextlib.suppress(psutil.Error):
+                proc.terminate()
+        _gone, alive = psutil.wait_procs(procs, timeout=timeout)
+        for proc in alive:
+            with contextlib.suppress(psutil.Error):
+                proc.kill()
+        psutil.wait_procs(alive, timeout=timeout)
+        return True
+    except (psutil.Error, KeyError, TypeError, ValueError):
+        return False
+    finally:
+        # Whatever it pointed at, it is stale now — unless the owner is alive.
+        if not _is_alive(record.get("owner", {})):
+            _clear_record()
+
+
 def _spawn_kwargs() -> dict[str, object]:
     if sys.platform == "win32":
         return {"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP}
@@ -176,6 +266,7 @@ class MarimoServer:
         if self.running:
             msg = "server already running"
             raise RuntimeError(msg)
+        reap_leftover_server()
         self.port = find_free_port()
         self._proc = subprocess.Popen(  # noqa: S603
             self._command(),
@@ -188,6 +279,7 @@ class MarimoServer:
             # would leave a live server behind after Stop.
             **_spawn_kwargs(),
         )
+        _write_record(self._proc, self.port)
 
     def poll(self) -> str:
         """Return ``"starting"``, ``"ready"`` or ``"exited"``."""
@@ -215,5 +307,6 @@ class MarimoServer:
                 _signal_group(proc, hard=True)
                 with contextlib.suppress(Exception):
                     proc.wait(timeout=timeout)
+        _clear_record()
         self._proc = None
         self.port = None

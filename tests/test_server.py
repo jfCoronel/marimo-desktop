@@ -331,3 +331,121 @@ def test_command_is_built_on_top_of_python_command(
     cmd = srv._command()
 
     assert cmd[:3] == [str(Path(STUB)), server_mod.MARIMO_CLI_FLAG, "edit"]
+
+
+# -- a server a crashed run left behind -------------------------------------
+
+# Parent that starts a grandchild in its own session — as marimo's inner
+# `uv run` does — prints the grandchild's PID, then idles.
+_TREE = """
+import subprocess, sys, time
+child = subprocess.Popen(
+    [sys.executable, "-c", "import time; time.sleep(120)"],
+    **({} if sys.platform == "win32" else {"start_new_session": True}),
+)
+print(child.pid, flush=True)
+time.sleep(120)
+"""
+
+
+@pytest.fixture
+def leftover_tree():
+    """A live (root, grandchild) pair, cleaned up whatever the test does."""
+    import psutil
+
+    root = subprocess.Popen([sys.executable, "-c", _TREE], stdout=subprocess.PIPE, text=True)
+    assert root.stdout is not None
+    grandchild = psutil.Process(int(root.stdout.readline()))
+    parent = psutil.Process(root.pid)
+    yield parent, grandchild
+    for proc in (grandchild, parent):
+        with contextlib.suppress(psutil.Error):
+            proc.kill()
+    root.wait(timeout=10)
+
+
+def _dead_identity() -> dict[str, float]:
+    proc = subprocess.Popen([sys.executable, "-c", "pass"])
+    identity = {"pid": proc.pid, "created": time.time() - 3600}
+    proc.wait(timeout=10)
+    return identity
+
+
+def _record(path: Path, server: dict, owner: dict) -> None:
+    import json
+
+    path.write_text(json.dumps({"server": server, "owner": owner, "port": 1}), encoding="utf-8")
+
+
+def test_reap_stops_the_whole_leftover_tree(leftover_tree, _isolated_server_record: Path) -> None:
+    """Crash, Force Quit, logout: nothing stopped the server, so the next
+    launch must — including the grandchild in a session of its own."""
+    root, grandchild = leftover_tree
+    _record(_isolated_server_record, server_mod._identity(root.pid), _dead_identity())
+
+    assert server_mod.reap_leftover_server() is True
+
+    assert not root.is_running() or root.status() == "zombie"
+    assert not grandchild.is_running() or grandchild.status() == "zombie"
+    assert not _isolated_server_record.exists()
+
+
+def test_reap_leaves_a_server_whose_app_is_still_running(
+    leftover_tree, _isolated_server_record: Path
+) -> None:
+    """Another instance of the app may be using it."""
+    root, grandchild = leftover_tree
+    owner = server_mod._identity(os.getpid())
+    _record(_isolated_server_record, server_mod._identity(root.pid), owner)
+
+    assert server_mod.reap_leftover_server() is False
+
+    assert root.is_running() and grandchild.is_running()
+    assert _isolated_server_record.exists()
+
+
+def test_reap_never_kills_a_process_that_reused_the_pid(
+    leftover_tree, _isolated_server_record: Path
+) -> None:
+    root, _grandchild = leftover_tree
+    stale = {"pid": root.pid, "created": root.create_time() - 3600}
+    _record(_isolated_server_record, stale, _dead_identity())
+
+    assert server_mod.reap_leftover_server() is False
+
+    assert root.is_running()
+    assert not _isolated_server_record.exists(), "a stale record is dropped"
+
+
+def test_reap_without_a_record_does_nothing() -> None:
+    assert server_mod.reap_leftover_server() is False
+
+
+@pytest.mark.parametrize("content", ["not json", "[]", '{"server": 1}'])
+def test_reap_drops_a_corrupt_record(content: str, _isolated_server_record: Path) -> None:
+    _isolated_server_record.write_text(content, encoding="utf-8")
+
+    assert server_mod.reap_leftover_server() is False
+    assert not _isolated_server_record.exists()
+
+
+def test_start_records_the_server_and_stop_erases_it(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, _isolated_server_record: Path
+) -> None:
+    import json
+
+    srv = MarimoServer(tmp_path)
+    monkeypatch.setattr(
+        srv, "_command", lambda: [sys.executable, "-c", "import time; time.sleep(60)"]
+    )
+
+    srv.start()
+    try:
+        record = json.loads(_isolated_server_record.read_text(encoding="utf-8"))
+        assert record["server"]["pid"] == srv._proc.pid
+        assert record["owner"]["pid"] == os.getpid()
+        assert record["port"] == srv.port
+    finally:
+        srv.stop()
+
+    assert not _isolated_server_record.exists()

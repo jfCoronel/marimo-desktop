@@ -17,7 +17,7 @@ from pathlib import Path
 from marimo_desktop.browsers import open_url
 from marimo_desktop.paths import config_dir as paths_config_dir
 from marimo_desktop.paths import default_notebooks_dir
-from marimo_desktop.server import MARIMO_CLI_FLAG, MarimoServer
+from marimo_desktop.server import MARIMO_CLI_FLAG, MarimoServer, reap_leftover_server
 
 _STARTUP_TIMEOUT_S = 40.0
 
@@ -148,6 +148,9 @@ def main(argv: list[str] | None = None) -> int:
     if os.environ.get("MARIMO_DESKTOP_DEBUG"):
         (paths_config_dir() / "argv.log").write_text(repr(sys.argv), encoding="utf-8")
     raw = _strip_macos_args(raw)
+    # A server a crashed run left behind would hold its port and memory
+    # until logout; clear it now rather than when Start is next pressed.
+    reap_leftover_server()
 
     parser = argparse.ArgumentParser(prog="marimo-desktop")
     parser.add_argument("notebook", nargs="?", help="Notebook file to open (implies --headless).")

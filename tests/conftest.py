@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-from marimo_desktop import config
+from marimo_desktop import config, server
 
 
 @pytest.fixture(autouse=True)
@@ -27,3 +27,12 @@ def _isolated_config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 def _no_notebooks_env(monkeypatch: pytest.MonkeyPatch) -> None:
     """A stray MARIMO_DESKTOP_NOTEBOOKS in the dev shell must not leak in."""
     monkeypatch.delenv("MARIMO_DESKTOP_NOTEBOOKS", raising=False)
+
+
+@pytest.fixture(autouse=True)
+def _isolated_server_record(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """Keep the running-server record out of the real config dir."""
+    path = tmp_path / "config" / "server.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setattr(server, "_record_path", lambda: path)
+    return path

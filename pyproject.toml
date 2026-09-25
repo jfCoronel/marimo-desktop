@@ -15,6 +15,9 @@ dependencies = [
     # install anything from a notebook, and --sandbox needs uv specifically;
     # neither pip nor a system uv can be assumed inside a bundle.
     "uv>=0.9",
+    # Finds and stops a server a crashed run left behind (see server.py).
+    # marimo already depends on it; listed because we import it directly.
+    "psutil>=5.9",
 ]
 
 [project.scripts]
@@ -100,6 +103,7 @@ icon = "assets/icon"            # briefcase looks for assets/icon.png
 requires = [
     "marimo>=0.24.0",
     "uv>=0.9",
+    "psutil>=5.9",
 ]
 
 [tool.briefcase.app.marimo-desktop.macOS]
