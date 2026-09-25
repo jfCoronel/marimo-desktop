@@ -72,6 +72,9 @@ jobs:
           uv run --no-project python scripts/smoke_bundle.py \
             "build/marimo-desktop/macos/app/marimo desktop.app"
 
+      - name: The control window's toolkit must load
+        run: '"build/marimo-desktop/macos/app/marimo desktop.app/Contents/MacOS/marimo desktop" --check-gui'
+
       - name: Package the DMG
         run: briefcase package macOS --adhoc-sign
 
@@ -108,6 +111,9 @@ jobs:
       - name: Smoke test the binary
         run: uv run --no-project python scripts/smoke_bundle.py dist/marimo-desktop
 
+      - name: The control window's toolkit must load
+        run: dist/marimo-desktop --check-gui
+
       # ux emits a bare executable on Linux; add the icon, .desktop entry and
       # a per-user installer around it.
       - name: Build the tarball
@@ -139,6 +145,9 @@ jobs:
 
       - name: Smoke test the binary
         run: uv run --no-project python scripts/smoke_bundle.py dist/marimo-desktop.exe
+
+      - name: The control window's toolkit must load
+        run: dist/marimo-desktop.exe --check-gui
 
       - name: Build the installer
         shell: pwsh

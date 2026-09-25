@@ -22,7 +22,8 @@ interpreter, so there is nothing to `pip install` and no venv to manage.
 | Linux (x86_64) | `marimo-desktop-{version}-linux-x86_64.tar.gz` |
 
 **The first launch downloads a Python interpreter and marimo (~200 MB) and
-can take a few minutes** — once only; later launches are instant. The
+can take a few minutes** — once only; later launches are instant. On macOS
+a notification says so, and the window appears when it is done. The
 download goes to `~/.cache/uv/` on macOS, `%LOCALAPPDATA%\\ux\\` on
 Windows and `~/.cache/ux/` on Linux.
 

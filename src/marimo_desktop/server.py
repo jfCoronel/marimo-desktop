@@ -44,11 +44,22 @@ def python_command() -> list[str]:
     which works for everything but the sandbox.
     """
     exe = Path(sys.executable)
-    if exe.stem.lower().startswith("python"):
+    if has_interpreter():
         return [str(exe), "-m", "marimo"]
     uv = bundled_uv()
     if uv is None:
         return [str(exe), MARIMO_CLI_FLAG]
+    return [*uv_python_command(uv), "-m", "marimo"]
+
+
+def has_interpreter() -> bool:
+    """False inside a Briefcase app, whose sys.executable is the app stub."""
+    return Path(sys.executable).stem.lower().startswith("python")
+
+
+def uv_python_command(uv: Path, *extra: str) -> list[str]:
+    """`uv run ... -- python`: a real interpreter of our minor version, with
+    the marimo we ship (plus `extra` requirements) installed."""
     from importlib.metadata import version
 
     return [
@@ -59,10 +70,9 @@ def python_command() -> list[str]:
         f"{sys.version_info.major}.{sys.version_info.minor}",
         "--with",
         f"marimo=={version('marimo')}",
+        *(arg for req in extra for arg in ("--with", req)),
         "--",
         "python",
-        "-m",
-        "marimo",
     ]
 
 

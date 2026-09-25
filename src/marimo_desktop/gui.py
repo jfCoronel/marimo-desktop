@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import os
 import platform
+import signal
 import sys
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
@@ -102,12 +103,22 @@ class App:
         self.folder: Path = ensure_notebooks_dir(Path(saved)) if saved else default_notebooks_dir()
         self.server: MarimoServer | None = None
         self._elapsed = 0.0
+        self._closing = False
         _add_recent(self.folder)
 
         self.root = tk.Tk()
         self.root.title(f"marimo desktop {__version__}")
         self.root.resizable(width=False, height=False)
         self.root.protocol("WM_DELETE_WINDOW", self._on_close)
+        # Closing the window is only one way out. Cmd+Q, Quit in the Dock and
+        # logging out arrive as tk::mac::Quit, and a kill as SIGTERM/SIGHUP;
+        # without these the server outlived the window (see
+        # server.reap_leftover_server for what a crash still leaves).
+        if sys.platform == "darwin":
+            self.root.createcommand("tk::mac::Quit", self._on_close)
+        for sig in (signal.SIGTERM, getattr(signal, "SIGHUP", None)):
+            if sig is not None:
+                signal.signal(sig, lambda *_: self.root.after(0, self._on_close))
 
         outer = ttk.Frame(self.root, padding=14)
         outer.grid(sticky="nsew")
@@ -168,7 +179,11 @@ class App:
 
     # -- lifecycle -------------------------------------------------------
     def run(self) -> int:
-        self.root.mainloop()
+        try:
+            self.root.mainloop()
+        finally:
+            if self.server and self.server.running:
+                self.server.stop()
         return 0
 
     def _bring_to_front(self) -> None:
@@ -179,6 +194,9 @@ class App:
             self.root.after(50, self.root.focus_force)
 
     def _on_close(self) -> None:
+        if self._closing:
+            return
+        self._closing = True
         if self.server and self.server.running:
             self.status_var.set("Stopping the server…")
             self.root.update_idletasks()

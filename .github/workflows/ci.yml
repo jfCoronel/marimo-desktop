@@ -114,6 +114,16 @@ jobs:
         if: runner.os == 'Windows'
         run: uv run --no-project python scripts/smoke_bundle.py dist/marimo-desktop.exe
 
+      # The smoke test runs headless; this proves the control window's
+      # toolkit loads too (no display needed).
+      - name: The control window's toolkit must load (Linux)
+        if: runner.os == 'Linux'
+        run: dist/marimo-desktop --check-gui
+
+      - name: The control window's toolkit must load (Windows)
+        if: runner.os == 'Windows'
+        run: dist/marimo-desktop.exe --check-gui
+
       - uses: actions/upload-artifact@v4
         with:
           name: bundle-${{ matrix.os }}
@@ -150,6 +160,11 @@ jobs:
         run: |
           uv run --no-project python scripts/smoke_bundle.py \
             "build/marimo-desktop/macos/app/marimo desktop.app"
+
+      # Briefcase's Python has no tkinter, so the window runs on the Python
+      # uv provides; the headless smoke test never touches that path.
+      - name: The control window's toolkit must load
+        run: '"build/marimo-desktop/macos/app/marimo desktop.app/Contents/MacOS/marimo desktop" --check-gui'
 
       - name: The signature must actually validate
         run: |

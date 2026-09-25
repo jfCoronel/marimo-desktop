@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import sys
 import types
 from pathlib import Path
@@ -194,3 +195,65 @@ def test_url_file_hook_survives_an_unwritable_path(
     monkeypatch.setenv("MARIMO_DESKTOP_URL_FILE", str(tmp_path / "nope" / "url.txt"))
 
     launcher._publish_url("http://127.0.0.1:1234")  # must not take the app down
+
+
+# -- the control window on a Python that has tkinter ------------------------
+
+STUB = "/Applications/marimo desktop.app/Contents/MacOS/marimo desktop"
+
+
+def test_no_relaunch_on_a_real_interpreter() -> None:
+    assert launcher._needs_relaunch() is False
+
+
+def test_briefcase_without_tkinter_relaunches(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Briefcase's embedded Python ships no tkinter, so the window can't open."""
+    monkeypatch.setattr(sys, "executable", STUB)
+    monkeypatch.setattr(launcher, "_has_tkinter", lambda: False)
+    monkeypatch.delenv(launcher._RELAUNCHED_ENV, raising=False)
+
+    assert launcher._needs_relaunch() is True
+
+
+def test_the_relaunched_process_never_relaunches_again(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(sys, "executable", STUB)
+    monkeypatch.setattr(launcher, "_has_tkinter", lambda: False)
+    monkeypatch.setenv(launcher._RELAUNCHED_ENV, "1")
+
+    assert launcher._needs_relaunch() is False
+
+
+def test_relaunch_runs_our_package_under_uv(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import marimo_desktop
+
+    uv = tmp_path / "uv"
+    execs: list[tuple] = []
+    monkeypatch.setattr(launcher, "bundled_uv", lambda: uv)
+    monkeypatch.setattr(launcher, "_notify_first_run", lambda: None)
+    monkeypatch.setattr(launcher.os, "execve", lambda *a: execs.append(a))
+
+    launcher._relaunch_under_uv(["--run"])
+
+    [(path, cmd, env)] = execs
+    assert path == uv
+    assert cmd[:2] == [str(uv), "run"]
+    assert any(arg.startswith("psutil==") for arg in cmd)
+    assert cmd[-4:] == ["python", "-m", "marimo_desktop", "--run"]
+    assert env[launcher._RELAUNCHED_ENV] == "1"
+    package_root = str(Path(marimo_desktop.__file__).resolve().parent.parent)
+    assert env["PYTHONPATH"].split(os.pathsep)[0] == package_root
+    assert env["PYTHONDONTWRITEBYTECODE"] == "1", "a .pyc in the .app breaks its signature"
+
+
+def test_relaunch_is_skipped_without_uv(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(launcher, "bundled_uv", lambda: None)
+    monkeypatch.setattr(launcher.os, "execve", lambda *_: pytest.fail("must not exec"))
+
+    launcher._relaunch_under_uv([])  # returns; the caller falls back
+
+
+def test_check_gui_loads_the_toolkit(capsys: pytest.CaptureFixture[str]) -> None:
+    assert launcher.main(["--check-gui"]) == 0
+    assert "gui ok" in capsys.readouterr().out

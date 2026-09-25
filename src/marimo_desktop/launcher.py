@@ -10,6 +10,7 @@ import argparse
 import contextlib
 import os
 import signal
+import subprocess
 import sys
 import time
 from pathlib import Path
@@ -17,7 +18,15 @@ from pathlib import Path
 from marimo_desktop.browsers import open_url
 from marimo_desktop.paths import config_dir as paths_config_dir
 from marimo_desktop.paths import default_notebooks_dir
-from marimo_desktop.server import MARIMO_CLI_FLAG, MarimoServer, reap_leftover_server
+from marimo_desktop.server import (
+    MARIMO_CLI_FLAG,
+    MarimoServer,
+    bundled_uv,
+    child_env,
+    has_interpreter,
+    reap_leftover_server,
+    uv_python_command,
+)
 
 _STARTUP_TIMEOUT_S = 40.0
 
@@ -138,6 +147,89 @@ def _python_c_command(args: list[str]) -> tuple[str, list[str]] | None:
     return None
 
 
+# Set in the interpreter uv provides, so it never tries to relaunch again.
+_RELAUNCHED_ENV = "MARIMO_DESKTOP_RELAUNCHED"
+
+
+def _has_tkinter() -> bool:
+    try:
+        import tkinter  # noqa: F401
+    except ImportError:
+        return False
+    return True
+
+
+def _runtime_marker() -> Path:
+    from marimo_desktop import __version__
+
+    return paths_config_dir() / f"runtime-{__version__}.ready"
+
+
+def _notify_first_run() -> None:
+    """The first relaunch downloads Python and marimo with no window to show
+    for it; say so, or the app looks like it did nothing for minutes."""
+    if sys.platform != "darwin" or _runtime_marker().exists():
+        return
+    script = (
+        'display notification "Downloading Python and marimo. This happens once '
+        'and can take a few minutes." with title "marimo desktop"'
+    )
+    with contextlib.suppress(OSError):
+        subprocess.Popen(  # noqa: S603
+            ["/usr/bin/osascript", "-e", script],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+
+
+def _relaunch_under_uv(args: list[str]) -> None:
+    """Replace this process with the same app on a Python that has tkinter.
+
+    A Briefcase app embeds a Python without tkinter (and without Tcl/Tk), so
+    the control window cannot open in it. The interpreter uv provides has
+    both, and the server already runs on it; so the window does too. The
+    code is the same: our package is put on PYTHONPATH from the bundle.
+    Returns only if there is no uv to do it with.
+    """
+    uv = bundled_uv()
+    if uv is None:
+        return
+    from importlib.metadata import version
+
+    import marimo_desktop
+
+    env = child_env()
+    env[_RELAUNCHED_ENV] = "1"
+    package_root = str(Path(marimo_desktop.__file__).resolve().parent.parent)
+    env["PYTHONPATH"] = os.pathsep.join(filter(None, [package_root, env.get("PYTHONPATH")]))
+    # Importing from the bundle must not write __pycache__ into it: any file
+    # added to a signed .app invalidates its signature.
+    env["PYTHONDONTWRITEBYTECODE"] = "1"
+    cmd = [
+        *uv_python_command(uv, f"psutil=={version('psutil')}"),
+        "-m",
+        "marimo_desktop",
+        *args,
+    ]
+    _notify_first_run()
+    os.execve(uv, cmd, env)  # noqa: S606
+
+
+def _needs_relaunch() -> bool:
+    return not has_interpreter() and not os.environ.get(_RELAUNCHED_ENV) and not _has_tkinter()
+
+
+def _check_gui() -> int:
+    """CI: prove the control window's toolkit loads, without a display."""
+    import tkinter
+
+    import marimo_desktop.gui  # noqa: F401 — runs the Tcl/Tk path fix
+
+    tkinter.Tcl().eval("info patchlevel")
+    print("gui ok")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     raw = list(sys.argv[1:] if argv is None else argv)
     if _python_c_command(raw) is not None:
@@ -163,6 +255,7 @@ def main(argv: list[str] | None = None) -> int:
         "--run", action="store_true", help="App mode (marimo run) instead of the editor."
     )
     parser.add_argument("--no-browser", action="store_true", help="Headless: don't open a browser.")
+    parser.add_argument("--check-gui", action="store_true", help=argparse.SUPPRESS)
     args, _unknown = parser.parse_known_args(raw)
 
     if args.headless or args.notebook:
@@ -171,6 +264,18 @@ def main(argv: list[str] | None = None) -> int:
             mode="run" if args.run else "edit",
             browser=not args.no_browser,
         )
+
+    if _needs_relaunch():
+        _relaunch_under_uv(raw)
+    if args.check_gui:
+        return _check_gui()
+    if os.environ.get(_RELAUNCHED_ENV):
+        with contextlib.suppress(OSError):
+            _runtime_marker().touch()
+        # Both only concern this process (sys.path and sys.dont_write_bytecode
+        # are already set); the server and its kernels must not inherit them.
+        os.environ.pop("PYTHONPATH", None)
+        os.environ.pop("PYTHONDONTWRITEBYTECODE", None)
 
     try:
         from marimo_desktop.gui import main as gui_main
