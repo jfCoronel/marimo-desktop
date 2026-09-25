@@ -1,6 +1,6 @@
 [project]
 name = "marimo-desktop"
-version = "0.3.3"
+version = "0.3.4"
 description = "Self-contained desktop app for marimo notebooks — bundled Python, nothing to install"
 readme = "README.md"
 license = "MIT"
@@ -85,7 +85,7 @@ icon = "assets/icon.png"        # PNG auto-converted to ICNS
 [tool.briefcase]
 project_name = "marimo desktop"
 bundle = "io.github.jfcoronel"
-version = "0.3.3"
+version = "0.3.4"
 url = "https://github.com/jfCoronel/marimo-desktop"
 author = "jfCoronel"
 author_email = "jfcoroneltoro@gmail.com"
@@ -100,14 +100,28 @@ server locally and opens it — so end users never touch pip, uv or a venv.
 """
 sources = ["src/marimo_desktop", "notebooks"]
 icon = "assets/icon"            # briefcase looks for assets/icon.png
+# No marimo: the app runs the one uv installs (server.MARIMO_VERSION), so
+# bundling it only added ~215 MB. The embedded Python just starts things.
+# Briefcase *adds* [project].dependencies to this list, so the workflows pass
+# it as a replacement: `-C "$(python scripts/briefcase_requires.py)"`.
 requires = [
-    "marimo>=0.24.0",
     "uv>=0.9",
     "psutil>=5.9",
 ]
 
 [tool.briefcase.app.marimo-desktop.macOS]
 universal_build = true
+# The embedded Python only starts the app and hands over to uv's; its test
+# suite (35 MB), ensurepip and friends are never used.
+cleanup_paths = [
+    "**/Python.framework/Versions/*/lib/python*/test",
+    "**/Python.framework/Versions/*/lib/python*/idlelib",
+    "**/Python.framework/Versions/*/lib/python*/ensurepip",
+    "**/Python.framework/Versions/*/lib/python*/pydoc_data",
+    "**/Python.framework/Versions/*/lib/python*/turtledemo",
+    "**/Python.framework/Versions/*/lib/python*/lib-dynload/_test*",
+    "**/Python.framework/Versions/*/lib/python*/lib-dynload/xxlimited*",
+]
 
 [tool.briefcase.app.marimo-desktop.windows]
 

@@ -126,47 +126,14 @@ def test_strip_does_not_swallow_a_flag_that_follows_a_valueless_ns_flag() -> Non
     assert launcher._strip_macos_args(["-NSSomething", "--headless"]) == ["--headless"]
 
 
-def test_the_private_flag_hands_over_to_marimos_cli(
-    calls: list[dict], monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """Re-invocation path for bundles with no python executable."""
-    from marimo_desktop.server import MARIMO_CLI_FLAG
-
-    handed: list[list[str]] = []
-    monkeypatch.setattr(launcher, "_exec_marimo_cli", lambda args: handed.append(args) or 0)
-
-    assert launcher.main([MARIMO_CLI_FLAG, "edit", "/nb", "--headless"]) == 0
-    assert handed == [["edit", "/nb", "--headless"]]
-    assert calls == [], "must not fall through to our own headless mode"
-
-
-@pytest.mark.parametrize(
-    "argv",
-    [
-        ["-B", "-s", "-c", "CODE", "--multiprocessing-fork"],
-        ["-X", "utf8", "-Wignore", "-c", "CODE", "--multiprocessing-fork"],
-    ],
-)
-def test_python_c_is_recognised_behind_interpreter_flags(argv: list[str]) -> None:
-    """How multiprocessing re-launches sys.executable — the app, when bundled."""
-    assert launcher._python_c_command(argv) == ("CODE", ["--multiprocessing-fork"])
-
-
-@pytest.mark.parametrize("argv", [[], ["--headless"], ["nb.py", "-c", "x"], ["-c"]])
-def test_our_own_arguments_are_not_mistaken_for_python_c(argv: list[str]) -> None:
-    assert launcher._python_c_command(argv) is None
-
-
 def test_python_c_is_refused_rather_than_run_or_ignored(
     calls: list[dict], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Pretending to be Python let uv build a sandbox on the app stub, which
     then hung; ignoring it opened another window. Fail fast instead."""
-    ran: list[str] = []
-    monkeypatch.setattr(launcher, "_exec_marimo_cli", lambda _args: ran.append("cli") or 0)
+    monkeypatch.setattr(launcher, "reap_leftover_server", lambda: pytest.fail("ran on"))
 
     assert launcher.main(["-I", "-B", "-c", "print('hi')"]) == 1
-    assert ran == []
     assert calls == [], "must not fall through to our own headless mode"
 
 

@@ -294,8 +294,6 @@ def test_python_command_runs_marimo_under_uv_when_there_is_no_interpreter(
     """A Briefcase app embeds libpython and ships no python executable, so
     sys.executable is the app itself. marimo's --sandbox passes that to
     `uv run --python`, which cannot use it — so uv supplies a real one."""
-    from importlib.metadata import version
-
     uv = tmp_path / "uv"
     monkeypatch.setattr(sys, "executable", STUB)
     monkeypatch.setattr(server_mod, "bundled_uv", lambda: uv)
@@ -304,33 +302,36 @@ def test_python_command_runs_marimo_under_uv_when_there_is_no_interpreter(
 
     minor = f"{sys.version_info.major}.{sys.version_info.minor}"
     assert cmd[:5] == [str(uv), "run", "--no-project", "--python", minor]
-    assert f"marimo=={version('marimo')}" in cmd
+    assert f"marimo=={server_mod.MARIMO_VERSION}" in cmd
     assert cmd[-4:] == ["--", "python", "-m", "marimo"]
     assert STUB not in cmd and str(Path(STUB)) not in cmd
 
 
-def test_python_command_re_invokes_the_app_as_a_last_resort(
+def test_python_command_fails_clearly_without_python_or_uv(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """No interpreter and no uv: run marimo's CLI in-process."""
+    """The bundle carries no marimo, so there is nothing to fall back on."""
     monkeypatch.setattr(sys, "executable", STUB)
     monkeypatch.setattr(server_mod, "bundled_uv", lambda: None)
+    monkeypatch.setattr(server_mod.shutil, "which", lambda _name: None)
 
-    # str(Path(...)) — the separators are normalised, and Windows runs this too.
-    assert server_mod.python_command() == [str(Path(STUB)), server_mod.MARIMO_CLI_FLAG]
+    with pytest.raises(FileNotFoundError):
+        server_mod.python_command()
 
 
 def test_command_is_built_on_top_of_python_command(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    uv = tmp_path / "uv"
     monkeypatch.setattr(sys, "executable", STUB)
-    monkeypatch.setattr(server_mod, "bundled_uv", lambda: None)
+    monkeypatch.setattr(server_mod, "bundled_uv", lambda: uv)
     srv = MarimoServer(tmp_path)
     srv.port = 4242
 
     cmd = srv._command()
 
-    assert cmd[:3] == [str(Path(STUB)), server_mod.MARIMO_CLI_FLAG, "edit"]
+    assert cmd[0] == str(uv)
+    assert cmd[cmd.index("marimo") + 1] == "edit"
 
 
 # -- a server a crashed run left behind -------------------------------------

@@ -62,21 +62,29 @@ jobs:
         # (<3.14), or it refuses the project.
         run: uv tool install --python 3.13 briefcase
 
+      # Briefcase adds [project].dependencies (marimo, for the ux builds) to
+      # the app's requires; pass the list as a replacement instead. See
+      # scripts/briefcase_requires.py.
       - name: Build the app
         run: |
-          briefcase create macOS
-          briefcase build macOS
+          requires="$(python3 scripts/briefcase_requires.py)"
+          echo "BRIEFCASE_REQUIRES=$requires" >> "$GITHUB_ENV"
+          briefcase create macOS -C "$requires"
+          briefcase build macOS -C "$requires"
 
       - name: Smoke test the app
         run: |
           uv run --no-project python scripts/smoke_bundle.py \
             "build/marimo-desktop/macos/app/marimo desktop.app"
 
+      - name: marimo must not be bundled (uv installs it; ~215 MB otherwise)
+        run: test ! -e "build/marimo-desktop/macos/app/marimo desktop.app/Contents/Resources/app_packages/marimo"
+
       - name: The control window's toolkit must load
         run: '"build/marimo-desktop/macos/app/marimo desktop.app/Contents/MacOS/marimo desktop" --check-gui'
 
       - name: Package the DMG
-        run: briefcase package macOS --adhoc-sign
+        run: briefcase package macOS --adhoc-sign -C "$BRIEFCASE_REQUIRES"
 
       - name: Sign DMG (ad-hoc)
         run: codesign --force --sign - "dist/marimo desktop-${{ needs.version.outputs.version }}.dmg"

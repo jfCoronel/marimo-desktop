@@ -151,15 +151,23 @@ jobs:
         # (<3.14), or it refuses the project.
         run: uv tool install --python 3.13 briefcase
 
+      # Briefcase adds [project].dependencies (marimo, for the ux builds) to
+      # the app's requires; pass the list as a replacement instead. See
+      # scripts/briefcase_requires.py.
       - name: Build the app
         run: |
-          briefcase create macOS
-          briefcase build macOS
+          requires="$(python3 scripts/briefcase_requires.py)"
+          echo "BRIEFCASE_REQUIRES=$requires" >> "$GITHUB_ENV"
+          briefcase create macOS -C "$requires"
+          briefcase build macOS -C "$requires"
 
       - name: Smoke test the app
         run: |
           uv run --no-project python scripts/smoke_bundle.py \
             "build/marimo-desktop/macos/app/marimo desktop.app"
+
+      - name: marimo must not be bundled (uv installs it; ~215 MB otherwise)
+        run: test ! -e "build/marimo-desktop/macos/app/marimo desktop.app/Contents/Resources/app_packages/marimo"
 
       # Briefcase's Python has no tkinter, so the window runs on the Python
       # uv provides; the headless smoke test never touches that path.

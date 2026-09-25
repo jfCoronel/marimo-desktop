@@ -16,9 +16,10 @@ from pathlib import Path
 
 HOST = "127.0.0.1"
 
-# Private flag: the app re-invoking itself as a marimo interpreter. See
-# python_command() and launcher.main().
-MARIMO_CLI_FLAG = "--exec-marimo-cli"
+# The marimo the Briefcase app runs, installed by uv on first launch. The
+# bundle itself carries no marimo (it would be ~215 MB nobody uses), so the
+# version cannot be read from it; tests keep this in step with uv.lock.
+MARIMO_VERSION = "0.25.0"
 
 
 def find_free_port() -> int:
@@ -35,21 +36,19 @@ def python_command() -> list[str]:
     own stub binary — so ``sys.executable`` there is the app itself, and
     passing it ``-m marimo`` just relaunches the app (recursively).
 
-    Running marimo in-process instead is not enough: ``--sandbox`` hands
+    marimo needs a real interpreter anyway: ``--sandbox`` hands
     ``sys.executable`` to ``uv run --python``, and multiprocessing spawns
-    kernels from it, so marimo needs a real interpreter. The bundled uv
-    provides one — same minor version, same marimo — as on Windows and
-    Linux, where the first launch downloads it too. Without uv, the app
-    re-invokes itself with a private flag and runs marimo's CLI in-process,
-    which works for everything but the sandbox.
+    kernels from it. The bundled uv provides one — same minor version,
+    pinned marimo — as on Windows and Linux, where the first launch
+    downloads it too.
     """
-    exe = Path(sys.executable)
     if has_interpreter():
-        return [str(exe), "-m", "marimo"]
-    uv = bundled_uv()
+        return [sys.executable, "-m", "marimo"]
+    uv = bundled_uv() or shutil.which("uv")
     if uv is None:
-        return [str(exe), MARIMO_CLI_FLAG]
-    return [*uv_python_command(uv), "-m", "marimo"]
+        msg = "no Python interpreter or uv to run marimo with"
+        raise FileNotFoundError(msg)
+    return [*uv_python_command(Path(uv)), "-m", "marimo"]
 
 
 def has_interpreter() -> bool:
@@ -59,9 +58,7 @@ def has_interpreter() -> bool:
 
 def uv_python_command(uv: Path, *extra: str) -> list[str]:
     """`uv run ... -- python`: a real interpreter of our minor version, with
-    the marimo we ship (plus `extra` requirements) installed."""
-    from importlib.metadata import version
-
+    the pinned marimo (plus `extra` requirements) installed."""
     return [
         str(uv),
         "run",
@@ -69,7 +66,7 @@ def uv_python_command(uv: Path, *extra: str) -> list[str]:
         "--python",
         f"{sys.version_info.major}.{sys.version_info.minor}",
         "--with",
-        f"marimo=={version('marimo')}",
+        f"marimo=={MARIMO_VERSION}",
         *(arg for req in extra for arg in ("--with", req)),
         "--",
         "python",

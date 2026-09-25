@@ -19,7 +19,6 @@ from marimo_desktop.browsers import open_url
 from marimo_desktop.paths import config_dir as paths_config_dir
 from marimo_desktop.paths import default_notebooks_dir
 from marimo_desktop.server import (
-    MARIMO_CLI_FLAG,
     MarimoServer,
     bundled_uv,
     child_env,
@@ -104,18 +103,6 @@ def _strip_macos_args(argv: list[str]) -> list[str]:
             continue
         kept.append(arg)
     return kept
-
-
-def _exec_marimo_cli(args: list[str]) -> int:
-    """Run marimo's own CLI in this process.
-
-    Only reached when the app re-invokes itself because there is no Python
-    executable to spawn (see server.python_command).
-    """
-    from marimo._cli.cli import main as marimo_main
-
-    marimo_main(args=args, prog_name="marimo", standalone_mode=False)
-    return 0
 
 
 # Interpreter flags multiprocessing prepends (util._args_from_interpreter_flags)
@@ -235,8 +222,6 @@ def main(argv: list[str] | None = None) -> int:
     if _python_c_command(raw) is not None:
         print("marimo desktop is not a Python interpreter.", file=sys.stderr)
         return 1
-    if raw and raw[0] == MARIMO_CLI_FLAG:
-        return _exec_marimo_cli(raw[1:])
     if os.environ.get("MARIMO_DESKTOP_DEBUG"):
         (paths_config_dir() / "argv.log").write_text(repr(sys.argv), encoding="utf-8")
     raw = _strip_macos_args(raw)
