@@ -156,18 +156,16 @@ def test_our_own_arguments_are_not_mistaken_for_python_c(argv: list[str]) -> Non
     assert launcher._python_c_command(argv) is None
 
 
-def test_python_c_runs_the_code_instead_of_the_app(
+def test_python_c_is_refused_rather_than_run_or_ignored(
     calls: list[dict], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A multiprocessing child must do its job, not open another window."""
-    monkeypatch.setattr(sys, "argv", list(sys.argv))
-    monkeypatch.setitem(sys.modules, "__main__", sys.modules["__main__"])
-    seen: list[list[str]] = []
-    monkeypatch.setattr(launcher, "_seen", seen, raising=False)
+    """Pretending to be Python let uv build a sandbox on the app stub, which
+    then hung; ignoring it opened another window. Fail fast instead."""
+    ran: list[str] = []
+    monkeypatch.setattr(launcher, "_exec_marimo_cli", lambda _args: ran.append("cli") or 0)
 
-    code = "import sys, marimo_desktop.launcher as l; l._seen.append(sys.argv)"
-    assert launcher.main(["-B", "-s", "-c", code, "--multiprocessing-fork"]) == 0
-    assert seen == [["-c", "--multiprocessing-fork"]]
+    assert launcher.main(["-I", "-B", "-c", "print('hi')"]) == 1
+    assert ran == []
     assert calls == [], "must not fall through to our own headless mode"
 
 

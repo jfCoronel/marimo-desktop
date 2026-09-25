@@ -285,27 +285,49 @@ def test_python_command_uses_the_interpreter_when_there_is_one() -> None:
     assert server_mod.python_command() == [sys.executable, "-m", "marimo"]
 
 
-def test_python_command_re_invokes_the_app_when_there_is_no_interpreter(
-    monkeypatch: pytest.MonkeyPatch,
+STUB = "/Applications/marimo desktop.app/Contents/MacOS/marimo desktop"
+
+
+def test_python_command_runs_marimo_under_uv_when_there_is_no_interpreter(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A Briefcase app embeds libpython and ships no python executable, so
-    sys.executable is the app itself; `-m marimo` would just relaunch the app,
-    recursively."""
-    stub = "/Applications/marimo desktop.app/Contents/MacOS/marimo desktop"
-    monkeypatch.setattr(sys, "executable", stub)
+    sys.executable is the app itself. marimo's --sandbox passes that to
+    `uv run --python`, which cannot use it — so uv supplies a real one."""
+    from importlib.metadata import version
+
+    uv = tmp_path / "uv"
+    monkeypatch.setattr(sys, "executable", STUB)
+    monkeypatch.setattr(server_mod, "bundled_uv", lambda: uv)
+
+    cmd = server_mod.python_command()
+
+    minor = f"{sys.version_info.major}.{sys.version_info.minor}"
+    assert cmd[:5] == [str(uv), "run", "--no-project", "--python", minor]
+    assert f"marimo=={version('marimo')}" in cmd
+    assert cmd[-4:] == ["--", "python", "-m", "marimo"]
+    assert STUB not in cmd and str(Path(STUB)) not in cmd
+
+
+def test_python_command_re_invokes_the_app_as_a_last_resort(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """No interpreter and no uv: run marimo's CLI in-process."""
+    monkeypatch.setattr(sys, "executable", STUB)
+    monkeypatch.setattr(server_mod, "bundled_uv", lambda: None)
 
     # str(Path(...)) — the separators are normalised, and Windows runs this too.
-    assert server_mod.python_command() == [str(Path(stub)), server_mod.MARIMO_CLI_FLAG]
+    assert server_mod.python_command() == [str(Path(STUB)), server_mod.MARIMO_CLI_FLAG]
 
 
 def test_command_is_built_on_top_of_python_command(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    stub = "/Applications/marimo desktop.app/Contents/MacOS/marimo desktop"
-    monkeypatch.setattr(sys, "executable", stub)
+    monkeypatch.setattr(sys, "executable", STUB)
+    monkeypatch.setattr(server_mod, "bundled_uv", lambda: None)
     srv = MarimoServer(tmp_path)
     srv.port = 4242
 
     cmd = srv._command()
 
-    assert cmd[:3] == [str(Path(stub)), server_mod.MARIMO_CLI_FLAG, "edit"]
+    assert cmd[:3] == [str(Path(STUB)), server_mod.MARIMO_CLI_FLAG, "edit"]

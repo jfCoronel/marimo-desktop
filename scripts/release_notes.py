@@ -21,11 +21,10 @@ interpreter, so there is nothing to `pip install` and no venv to manage.
 | Windows 10/11 (64-bit) | `marimo-desktop-{version}-windows-x64-setup.exe` |
 | Linux (x86_64) | `marimo-desktop-{version}-linux-x86_64.tar.gz` |
 
-The macOS build carries Python and marimo inside it, so it is larger to
-download but starts straight away. **On Windows and Linux the first launch
-downloads a Python interpreter and marimo (~200 MB) and can take a few
-minutes** — once only; later launches are instant, and the download goes to
-`%LOCALAPPDATA%\\ux\\` or `~/.cache/ux/`.
+**The first launch downloads a Python interpreter and marimo (~200 MB) and
+can take a few minutes** — once only; later launches are instant. The
+download goes to `~/.cache/uv/` on macOS, `%LOCALAPPDATA%\\ux\\` on
+Windows and `~/.cache/ux/` on Linux.
 
 ## These builds are not signed
 

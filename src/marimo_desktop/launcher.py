@@ -119,9 +119,10 @@ def _python_c_command(args: list[str]) -> tuple[str, list[str]] | None:
     """Recognise ``[flags...] -c CODE [args...]`` and return (CODE, args).
 
     A Briefcase app has no Python executable, so ``sys.executable`` is the app
-    and multiprocessing starts its children — marimo's kernels and the
-    resource tracker — as ``<app> -B -s -c "from multiprocessing... "``.
-    Without this every child would open another control window instead.
+    and anything treating it as one — multiprocessing, uv probing an
+    interpreter — launches ``<app> -B -s -c "..."``. Answering like Python
+    makes uv build environments on a stub that cannot run outside the bundle
+    (and then hang); ignoring it opens another control window. So refuse.
     """
     i = 0
     while i < len(args):
@@ -137,22 +138,11 @@ def _python_c_command(args: list[str]) -> tuple[str, list[str]] | None:
     return None
 
 
-def _exec_python_c(code: str, args: list[str]) -> int:
-    """Run CODE the way ``python -c`` would, in a fresh ``__main__``."""
-    import types
-
-    sys.argv = ["-c", *args]
-    module = types.ModuleType("__main__")
-    sys.modules["__main__"] = module
-    exec(compile(code, "<string>", "exec"), module.__dict__)  # noqa: S102
-    return 0
-
-
 def main(argv: list[str] | None = None) -> int:
     raw = list(sys.argv[1:] if argv is None else argv)
-    python_c = _python_c_command(raw)
-    if python_c is not None:
-        return _exec_python_c(*python_c)
+    if _python_c_command(raw) is not None:
+        print("marimo desktop is not a Python interpreter.", file=sys.stderr)
+        return 1
     if raw and raw[0] == MARIMO_CLI_FLAG:
         return _exec_marimo_cli(raw[1:])
     if os.environ.get("MARIMO_DESKTOP_DEBUG"):

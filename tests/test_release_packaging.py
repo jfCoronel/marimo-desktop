@@ -168,7 +168,8 @@ def test_notes_warn_not_to_move_the_app_to_the_trash(notes: str) -> None:
 
 
 def test_notes_warn_about_the_first_launch_download(notes: str) -> None:
-    """Windows and Linux bootstrap on first run; macOS carries everything."""
+    """Every platform bootstraps on first run: macOS too, since marimo's
+    sandbox needs a real interpreter and the Briefcase app has none."""
     assert "200 MB" in notes
 
 

@@ -32,14 +32,37 @@ def python_command() -> list[str]:
     Normally ``sys.executable -m marimo``. A Briefcase app has **no Python
     executable at all** — it embeds libpython and runs our package inside its
     own stub binary — so ``sys.executable`` there is the app itself, and
-    passing it ``-m marimo`` just relaunches the app (recursively). In that
-    case the app re-invokes itself with a private flag and hands over to
-    marimo's CLI in-process.
+    passing it ``-m marimo`` just relaunches the app (recursively).
+
+    Running marimo in-process instead is not enough: ``--sandbox`` hands
+    ``sys.executable`` to ``uv run --python``, and multiprocessing spawns
+    kernels from it, so marimo needs a real interpreter. The bundled uv
+    provides one — same minor version, same marimo — as on Windows and
+    Linux, where the first launch downloads it too. Without uv, the app
+    re-invokes itself with a private flag and runs marimo's CLI in-process,
+    which works for everything but the sandbox.
     """
     exe = Path(sys.executable)
     if exe.stem.lower().startswith("python"):
         return [str(exe), "-m", "marimo"]
-    return [str(exe), MARIMO_CLI_FLAG]
+    uv = bundled_uv()
+    if uv is None:
+        return [str(exe), MARIMO_CLI_FLAG]
+    from importlib.metadata import version
+
+    return [
+        str(uv),
+        "run",
+        "--no-project",
+        "--python",
+        f"{sys.version_info.major}.{sys.version_info.minor}",
+        "--with",
+        f"marimo=={version('marimo')}",
+        "--",
+        "python",
+        "-m",
+        "marimo",
+    ]
 
 
 def bundled_uv() -> Path | None:
