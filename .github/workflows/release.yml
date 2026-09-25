@@ -86,13 +86,30 @@ jobs:
       - name: Package the DMG
         run: briefcase package macOS --adhoc-sign -C "$BRIEFCASE_REQUIRES"
 
-      - name: Sign DMG (ad-hoc)
-        run: codesign --force --sign - "dist/marimo desktop-${{ needs.version.outputs.version }}.dmg"
-
-      - name: Name the DMG after the release
+      # Gatekeeper assesses a disk image on open only if it is signed, and an
+      # ad-hoc (unnotarised) signature is refused — a second "Open Anyway" on
+      # top of the app's own. Briefcase signs the DMG with --adhoc-sign, and
+      # codesign cannot strip a DMG, so re-create the image: the copy is
+      # unsigned, the app inside keeps its signature, and quarantine still
+      # reaches it, so the one prompt users do get is the app's. ULMO (lzma)
+      # is also smaller than Briefcase's bzip2; it needs macOS 10.15+.
+      - name: Leave the DMG unsigned and name it after the release
         run: |
-          mv "dist/marimo desktop-${{ needs.version.outputs.version }}.dmg" \
-             "dist/marimo-desktop-${{ needs.version.outputs.version }}-macos-universal.dmg"
+          hdiutil convert "dist/marimo desktop-${{ needs.version.outputs.version }}.dmg" \
+            -format ULMO \
+            -o "dist/marimo-desktop-${{ needs.version.outputs.version }}-macos-universal.dmg"
+          rm "dist/marimo desktop-${{ needs.version.outputs.version }}.dmg"
+
+      - name: The DMG must be unsigned, the app inside signed
+        run: |
+          dmg="dist/marimo-desktop-${{ needs.version.outputs.version }}-macos-universal.dmg"
+          if codesign -dv "$dmg" 2>/dev/null; then
+            echo "::error::$dmg is signed; Gatekeeper would prompt for it too"
+            exit 1
+          fi
+          mount=$(hdiutil attach -nobrowse -readonly "$dmg" | tail -1 | cut -f3)
+          codesign --verify --verbose=2 "$mount/marimo desktop.app"
+          hdiutil detach "$mount"
 
       - uses: actions/upload-artifact@v4
         with:
