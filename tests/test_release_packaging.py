@@ -160,6 +160,13 @@ def test_notes_describe_the_message_macos_actually_shows(notes: str) -> None:
     assert "damaged" not in notes
 
 
+def test_notes_warn_not_to_move_the_app_to_the_trash(notes: str) -> None:
+    """The refusal dialog's buttons are Move to Trash / Done; clicking the
+    wrong one deletes the app, so the notes must say which to press."""
+    assert "Move to Trash" in notes
+    assert "Click Done" in notes
+
+
 def test_notes_warn_about_the_first_launch_download(notes: str) -> None:
     """Windows and Linux bootstrap on first run; macOS carries everything."""
     assert "200 MB" in notes

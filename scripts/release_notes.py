@@ -37,14 +37,28 @@ this one included.
 ### macOS
 
 The app is signed, but not *notarised* — that needs a paid Apple Developer
-account. So the first launch is refused:
+account. So macOS **will** refuse the first launch, and it will offer to throw
+the app away. That is expected; this is how to get past it:
 
-1. Open the `.dmg` and drag **marimo desktop** to Applications.
-2. Launch it. macOS says it cannot verify the developer. Click **Done**.
-3. Open **System Settings → Privacy & Security**, scroll to the bottom, and
-   click **Open Anyway** next to the message about marimo desktop.
+1. Open the `.dmg` and drag **marimo desktop** to Applications. Launch it
+   from Applications, not from inside the `.dmg`.
+2. macOS says *"marimo desktop" Not Opened — Apple could not verify it is
+   free of malware* and offers **Move to Trash** or **Done**.
+   **Click Done — not Move to Trash.** (Right-click → Open no longer gets
+   past this on macOS 15 and later.)
+3. Open **System Settings → Privacy & Security** and scroll to the
+   **Security** section at the bottom. Next to *"marimo desktop" was blocked
+   to protect your Mac* click **Open Anyway**. The button only appears after
+   a launch attempt, and only for about an hour — if it is missing, repeat
+   step 2.
+4. Launch the app again. In the new dialog click **Open Anyway** and confirm
+   with your password or Touch ID.
 
-From then on it opens normally. If you prefer one line in Terminal instead:
+That is needed once only; from then on it opens normally. If you already
+clicked Move to Trash, just drag it from the `.dmg` to Applications again.
+
+Or skip all of that with one line in Terminal (after step 1), which removes
+the "downloaded from the internet" flag that triggers the check:
 
 ```sh
 xattr -dr com.apple.quarantine "/Applications/marimo desktop.app"

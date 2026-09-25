@@ -109,8 +109,50 @@ def _exec_marimo_cli(args: list[str]) -> int:
     return 0
 
 
+# Interpreter flags multiprocessing prepends (util._args_from_interpreter_flags)
+# and the ones among them that take a separate value.
+_PYTHON_FLAGS = {"-B", "-s", "-S", "-E", "-I", "-O", "-OO", "-b", "-bb", "-q", "-u", "-v"}
+_PYTHON_VALUE_FLAGS = {"-X", "-W"}
+
+
+def _python_c_command(args: list[str]) -> tuple[str, list[str]] | None:
+    """Recognise ``[flags...] -c CODE [args...]`` and return (CODE, args).
+
+    A Briefcase app has no Python executable, so ``sys.executable`` is the app
+    and multiprocessing starts its children — marimo's kernels and the
+    resource tracker — as ``<app> -B -s -c "from multiprocessing... "``.
+    Without this every child would open another control window instead.
+    """
+    i = 0
+    while i < len(args):
+        arg = args[i]
+        if arg == "-c" and i + 1 < len(args):
+            return args[i + 1], args[i + 2 :]
+        if arg in _PYTHON_VALUE_FLAGS:
+            i += 2
+        elif arg in _PYTHON_FLAGS or (arg[:2] in _PYTHON_VALUE_FLAGS and len(arg) > 2):
+            i += 1
+        else:
+            return None
+    return None
+
+
+def _exec_python_c(code: str, args: list[str]) -> int:
+    """Run CODE the way ``python -c`` would, in a fresh ``__main__``."""
+    import types
+
+    sys.argv = ["-c", *args]
+    module = types.ModuleType("__main__")
+    sys.modules["__main__"] = module
+    exec(compile(code, "<string>", "exec"), module.__dict__)  # noqa: S102
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     raw = list(sys.argv[1:] if argv is None else argv)
+    python_c = _python_c_command(raw)
+    if python_c is not None:
+        return _exec_python_c(*python_c)
     if raw and raw[0] == MARIMO_CLI_FLAG:
         return _exec_marimo_cli(raw[1:])
     if os.environ.get("MARIMO_DESKTOP_DEBUG"):

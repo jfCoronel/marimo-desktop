@@ -139,6 +139,38 @@ def test_the_private_flag_hands_over_to_marimos_cli(
     assert calls == [], "must not fall through to our own headless mode"
 
 
+@pytest.mark.parametrize(
+    "argv",
+    [
+        ["-B", "-s", "-c", "CODE", "--multiprocessing-fork"],
+        ["-X", "utf8", "-Wignore", "-c", "CODE", "--multiprocessing-fork"],
+    ],
+)
+def test_python_c_is_recognised_behind_interpreter_flags(argv: list[str]) -> None:
+    """How multiprocessing re-launches sys.executable — the app, when bundled."""
+    assert launcher._python_c_command(argv) == ("CODE", ["--multiprocessing-fork"])
+
+
+@pytest.mark.parametrize("argv", [[], ["--headless"], ["nb.py", "-c", "x"], ["-c"]])
+def test_our_own_arguments_are_not_mistaken_for_python_c(argv: list[str]) -> None:
+    assert launcher._python_c_command(argv) is None
+
+
+def test_python_c_runs_the_code_instead_of_the_app(
+    calls: list[dict], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A multiprocessing child must do its job, not open another window."""
+    monkeypatch.setattr(sys, "argv", list(sys.argv))
+    monkeypatch.setitem(sys.modules, "__main__", sys.modules["__main__"])
+    seen: list[list[str]] = []
+    monkeypatch.setattr(launcher, "_seen", seen, raising=False)
+
+    code = "import sys, marimo_desktop.launcher as l; l._seen.append(sys.argv)"
+    assert launcher.main(["-B", "-s", "-c", code, "--multiprocessing-fork"]) == 0
+    assert seen == [["-c", "--multiprocessing-fork"]]
+    assert calls == [], "must not fall through to our own headless mode"
+
+
 def test_url_file_hook_is_a_no_op_without_the_variable(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
